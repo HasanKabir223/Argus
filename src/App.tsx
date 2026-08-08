@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { INITIAL_MATCHES, CHECKPOINTS, type Match } from './data/mockData';
 import { TopBar } from './components/TopBar';
+import { GlobeView } from './components/GlobeView';
 import { MapView } from './components/MapView';
 import { MatchListPanel } from './components/MatchListPanel';
 import { TimelineStrip } from './components/TimelineStrip';
@@ -10,12 +11,14 @@ import { CheckpointStatusPanel } from './components/CheckpointStatusPanel';
 import { AuditLogPanel, type AuditEntry } from './components/AuditLogPanel';
 import { ShortcutsOverlay } from './components/ShortcutsOverlay';
 import { LoadingScreen } from './components/LoadingScreen';
+import { fetchEvents, updateEventStatus } from './services/api';
 
 function App() {
   const [isBooting, setIsBooting] = useState(true);
   const [matches, setMatches] = useState<Match[]>(INITIAL_MATCHES);
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'globe' | 'map'>('globe');
   const [isLive, setIsLive] = useState(true);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
@@ -38,28 +41,31 @@ function App() {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
-  // Simulating incoming matches (pausable via TopBar toggle)
+  // Sync events from FastAPI backend
+  const syncBackendEvents = useCallback(async () => {
+    const backendEvents = await fetchEvents();
+    if (backendEvents && backendEvents.length > 0) {
+      const mapped: Match[] = backendEvents.map(e => ({
+        id: String(e.match_id || e.id),
+        personId: e.person_id,
+        name: e.name || 'Unknown Candidate',
+        checkpointId: e.checkpoint_id,
+        confidence: e.confidence,
+        timestamp: new Date(e.timestamp),
+        status: (e.status === 'CONFIRMED' ? 'CONFIRMED' : e.status === 'DISMISSED' ? 'DISMISSED' : 'PENDING REVIEW') as any,
+        faceCropUrl: e.face_crop_path ? `http://localhost:8000${e.face_crop_path}` : undefined,
+        referencePhotoUrl: e.reference_photo_path ? `http://localhost:8000${e.reference_photo_path}` : undefined
+      }));
+      setMatches(mapped);
+    }
+  }, []);
+
   useEffect(() => {
+    syncBackendEvents();
     if (!isLive) return;
-    const timer = setInterval(() => {
-      if (Math.random() > 0.8) {
-        const checkpointId = `cp-0${Math.floor(Math.random() * 5) + 1}`;
-        const cp = CHECKPOINTS.find(c => c.id === checkpointId);
-        const newMatch: Match = {
-          id: `m-${Date.now()}`,
-          personId: `p-${Math.floor(Math.random() * 100).toString().padStart(3, '0')}`,
-          name: 'Unknown Candidate',
-          checkpointId,
-          confidence: 0.7 + Math.random() * 0.3,
-          timestamp: new Date(),
-          status: 'PENDING REVIEW'
-        };
-        setMatches(prev => [...prev, newMatch]);
-        addToast(`New match at ${cp?.name ?? checkpointId} — ${(newMatch.confidence * 100).toFixed(1)}%`, 'alert');
-      }
-    }, 10000);
-    return () => clearInterval(timer);
-  }, [isLive, addToast]);
+    const interval = setInterval(syncBackendEvents, 2500);
+    return () => clearInterval(interval);
+  }, [isLive, syncBackendEvents]);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -68,6 +74,7 @@ function App() {
       const isTyping = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
       if (isTyping) return;
       if (e.key === 'p' || e.key === 'P') setIsLive(prev => !prev);
+      if (e.key === 'v' || e.key === 'V') setViewMode(prev => prev === 'globe' ? 'map' : 'globe');
       if (e.key === '?') setShowShortcuts(prev => !prev);
     };
     window.addEventListener('keydown', handleKey);
@@ -97,7 +104,7 @@ function App() {
     }
   };
 
-  const handleConfirmMatch = (matchId: string) => {
+  const handleConfirmMatch = async (matchId: string) => {
     const match = matches.find(m => m.id === matchId);
     setMatches(prev => prev.map(m => m.id === matchId ? { ...m, status: 'CONFIRMED' } : m));
     if (match) {
@@ -114,9 +121,12 @@ function App() {
     }
     setSelectedMatchId(null);
     setSelectedPersonId(null);
+
+    await updateEventStatus(matchId, 'CONFIRMED');
+    syncBackendEvents();
   };
 
-  const handleDismissMatch = (matchId: string) => {
+  const handleDismissMatch = async (matchId: string) => {
     const match = matches.find(m => m.id === matchId);
     setMatches(prev => prev.map(m => m.id === matchId ? { ...m, status: 'DISMISSED' } : m));
     if (match) {
@@ -133,6 +143,9 @@ function App() {
     }
     setSelectedMatchId(null);
     setSelectedPersonId(null);
+
+    await updateEventStatus(matchId, 'DISMISSED');
+    syncBackendEvents();
   };
 
   if (isBooting) {
@@ -151,13 +164,24 @@ function App() {
         onOpenCheckpoints={() => setShowCheckpoints(prev => !prev)}
         onOpenAuditLog={() => setShowAuditLog(true)}
         onOpenShortcuts={() => setShowShortcuts(true)}
+        viewMode={viewMode}
+        onToggleViewMode={() => setViewMode(prev => prev === 'globe' ? 'map' : 'globe')}
+        onSimulate={syncBackendEvents}
       />
-      <MapView matches={matches} selectedPersonId={selectedPersonId} onSelectCheckpoint={handleSelectCheckpoint} />
+
+      {/* Main Viewport: 3D Globe vs 2D Tactical Map */}
+      {viewMode === 'globe' ? (
+        <GlobeView matches={matches} selectedPersonId={selectedPersonId} />
+      ) : (
+        <MapView matches={matches} selectedPersonId={selectedPersonId} onSelectCheckpoint={handleSelectCheckpoint} />
+      )}
+
       <MatchListPanel
         matches={matches}
         selectedPersonId={selectedPersonId}
         onSelectPerson={handleSelectPerson}
       />
+
       <TimelineStrip matches={matches} onSelectPerson={handleSelectPerson} />
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
@@ -170,8 +194,8 @@ function App() {
           <div style={{
             position: 'absolute',
             top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: 'rgba(10, 14, 20, 0.6)',
-            backdropFilter: 'blur(2px)',
+            backgroundColor: 'rgba(10, 14, 20, 0.65)',
+            backdropFilter: 'blur(3px)',
             zIndex: 150,
           }} onClick={() => { setSelectedMatchId(null); setSelectedPersonId(null); }} />
 
@@ -189,8 +213,8 @@ function App() {
           <div style={{
             position: 'absolute',
             top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: 'rgba(10, 14, 20, 0.6)',
-            backdropFilter: 'blur(2px)',
+            backgroundColor: 'rgba(10, 14, 20, 0.65)',
+            backdropFilter: 'blur(3px)',
             zIndex: 190,
           }} onClick={() => setShowAuditLog(false)} />
           <AuditLogPanel entries={auditLog} onClose={() => setShowAuditLog(false)} />
@@ -202,8 +226,8 @@ function App() {
           <div style={{
             position: 'absolute',
             top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: 'rgba(10, 14, 20, 0.6)',
-            backdropFilter: 'blur(2px)',
+            backgroundColor: 'rgba(10, 14, 20, 0.65)',
+            backdropFilter: 'blur(3px)',
             zIndex: 190,
           }} onClick={() => setShowShortcuts(false)} />
           <ShortcutsOverlay onClose={() => setShowShortcuts(false)} />

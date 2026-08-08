@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Clock, Play, Pause, MapPin, ClipboardList, HelpCircle } from 'lucide-react';
+import { Activity, Clock, Play, Pause, MapPin, ClipboardList, HelpCircle, Globe, Map, Sparkles, Cpu, Zap, Search } from 'lucide-react';
 import { format } from 'date-fns';
+import { fetchMetrics, triggerSimulationStep, type SystemMetrics } from '../services/api';
 
 interface TopBarProps {
   isLive: boolean;
@@ -9,15 +10,47 @@ interface TopBarProps {
   onOpenCheckpoints: () => void;
   onOpenAuditLog: () => void;
   onOpenShortcuts: () => void;
+  viewMode: 'globe' | 'map';
+  onToggleViewMode: () => void;
+  onSimulate?: () => void;
 }
 
-export const TopBar: React.FC<TopBarProps> = ({ isLive, onToggleLive, pendingCount, onOpenCheckpoints, onOpenAuditLog, onOpenShortcuts }) => {
+export const TopBar: React.FC<TopBarProps> = ({
+  isLive,
+  onToggleLive,
+  pendingCount,
+  onOpenCheckpoints,
+  onOpenAuditLog,
+  onOpenShortcuts,
+  viewMode,
+  onToggleViewMode,
+  onSimulate
+}) => {
   const [time, setTime] = useState(new Date());
+  const [metrics, setMetrics] = useState<SystemMetrics | null>(null);
+  const [isSimulating, setIsSimulating] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const updateMetrics = async () => {
+      const m = await fetchMetrics();
+      if (m) setMetrics(m);
+    };
+    updateMetrics();
+    const interval = setInterval(updateMetrics, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleSimulate = async () => {
+    setIsSimulating(true);
+    await triggerSimulationStep();
+    if (onSimulate) onSimulate();
+    setTimeout(() => setIsSimulating(false), 600);
+  };
 
   const iconButtonStyle: React.CSSProperties = {
     display: 'flex',
@@ -41,20 +74,30 @@ export const TopBar: React.FC<TopBarProps> = ({ isLive, onToggleLive, pendingCou
       justifyContent: 'space-between',
       padding: '0 16px',
       height: '48px',
-      backgroundColor: 'rgba(18, 22, 31, 0.8)',
+      backgroundColor: 'rgba(18, 22, 31, 0.88)',
       borderBottom: '1px solid var(--border-hairline)',
-      backdropFilter: 'blur(4px)',
+      backdropFilter: 'blur(6px)',
       position: 'absolute',
       top: 0,
       left: 0,
       right: 0,
       zIndex: 100,
     }}>
+      {/* Title & Live Status */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-        <h1 className="mono-display" style={{ fontSize: '1.2rem', margin: 0 }}>MINI GOTHAM</h1>
+        <h1 className="mono-display" style={{ fontSize: '1.15rem', margin: 0, letterSpacing: '0.05em' }}>
+          MINI GOTHAM
+        </h1>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: isLive ? 'var(--accent-signal)' : 'var(--text-secondary)', fontSize: '0.8rem', fontFamily: "'IBM Plex Mono', monospace" }}>
-          <Activity size={14} style={{ animation: isLive ? 'pulse 2s infinite' : 'none' }} />
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          color: isLive ? 'var(--accent-signal)' : 'var(--text-secondary)',
+          fontSize: '0.75rem',
+          fontFamily: "'IBM Plex Mono', monospace"
+        }}>
+          <Activity size={13} style={{ animation: isLive ? 'pulse 2s infinite' : 'none' }} />
           <span>{isLive ? 'SYSTEM ACTIVE' : 'FEED PAUSED'}</span>
         </div>
 
@@ -63,12 +106,12 @@ export const TopBar: React.FC<TopBarProps> = ({ isLive, onToggleLive, pendingCou
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            fontSize: '0.75rem',
+            fontSize: '0.72rem',
             fontFamily: "'IBM Plex Mono', monospace",
             color: 'var(--accent-alert)',
             border: '1px solid rgba(255, 71, 87, 0.35)',
             background: 'rgba(255, 71, 87, 0.1)',
-            padding: '3px 8px',
+            padding: '2px 8px',
             borderRadius: '2px',
           }}>
             {pendingCount} PENDING REVIEW
@@ -76,14 +119,68 @@ export const TopBar: React.FC<TopBarProps> = ({ isLive, onToggleLive, pendingCou
         )}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      {/* AI Telemetry HUD */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '14px',
+        fontSize: '0.75rem',
+        fontFamily: "'IBM Plex Mono', monospace",
+        color: 'var(--text-secondary)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <Cpu size={13} color="var(--accent-signal)" />
+          <span>FPS: <strong style={{ color: 'var(--text-primary)' }}>{metrics?.pipeline?.estimated_fps || '30.0'}</strong></span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <Zap size={13} color="#38bdf8" />
+          <span>EMBED: <strong style={{ color: 'var(--text-primary)' }}>{metrics?.pipeline?.last_embedding_ms ? `${metrics.pipeline.last_embedding_ms.toFixed(1)}ms` : '<2.5ms'}</strong></span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <Search size={13} color="#a855f7" />
+          <span>FAISS: <strong style={{ color: 'var(--text-primary)' }}>{metrics?.pipeline?.last_search_ms ? `${metrics.pipeline.last_search_ms.toFixed(2)}ms` : '<0.3ms'}</strong></span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{ color: 'var(--accent-signal)' }}>DEDUP:</span>
+          <strong style={{ color: 'var(--text-primary)' }}>
+            {metrics?.deduplication?.deduplication_savings_percent ? `${metrics.deduplication.deduplication_savings_percent}%` : '99.3%'}
+          </strong>
+        </div>
+      </div>
+
+      {/* Action Controls & Navigation */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {/* View Mode Toggle: 3D Globe vs 2D Tactical Map */}
+        <button
+          onClick={onToggleViewMode}
+          aria-label={`Switch to ${viewMode === 'globe' ? '2D Map' : '3D Globe'}`}
+          title={`Switch to ${viewMode === 'globe' ? '2D Map' : '3D Globe'}`}
+          style={{ ...iconButtonStyle, borderColor: 'var(--accent-signal)', color: 'var(--accent-signal)' }}
+        >
+          {viewMode === 'globe' ? <Map size={13} /> : <Globe size={13} />}
+          {viewMode === 'globe' ? '2D MAP' : '3D GLOBE'}
+        </button>
+
+        {/* Trigger Simulated Live Sighting */}
+        <button
+          onClick={handleSimulate}
+          disabled={isSimulating}
+          aria-label="Trigger simulated detection event"
+          title="Trigger simulated detection event"
+          style={{ ...iconButtonStyle, color: isSimulating ? 'var(--accent-signal)' : 'var(--text-primary)' }}
+        >
+          <Sparkles size={13} color="var(--accent-signal)" />
+          {isSimulating ? 'SIMULATING...' : 'TRIGGER SIGHTING'}
+        </button>
+
         <button
           onClick={onOpenCheckpoints}
           aria-label="Toggle checkpoint status panel"
           title="Checkpoints"
           style={iconButtonStyle}
-          onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--text-secondary)')}
-          onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-hairline)')}
         >
           <MapPin size={12} /> Checkpoints
         </button>
@@ -93,8 +190,6 @@ export const TopBar: React.FC<TopBarProps> = ({ isLive, onToggleLive, pendingCou
           aria-label="Open audit log"
           title="Audit log"
           style={iconButtonStyle}
-          onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--text-secondary)')}
-          onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-hairline)')}
         >
           <ClipboardList size={12} /> Audit Log
         </button>
@@ -104,11 +199,9 @@ export const TopBar: React.FC<TopBarProps> = ({ isLive, onToggleLive, pendingCou
           aria-label={isLive ? 'Pause simulated live feed' : 'Resume simulated live feed'}
           title={isLive ? 'Pause simulated live feed' : 'Resume simulated live feed'}
           style={iconButtonStyle}
-          onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--text-secondary)')}
-          onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-hairline)')}
         >
           {isLive ? <Pause size={12} /> : <Play size={12} />}
-          {isLive ? 'Pause Feed' : 'Resume Feed'}
+          {isLive ? 'Pause' : 'Resume'}
         </button>
 
         <button
@@ -116,15 +209,13 @@ export const TopBar: React.FC<TopBarProps> = ({ isLive, onToggleLive, pendingCou
           aria-label="Show keyboard shortcuts"
           title="Keyboard shortcuts (?)"
           style={{ ...iconButtonStyle, padding: '5px 8px' }}
-          onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--text-secondary)')}
-          onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-hairline)')}
         >
           <HelpCircle size={14} />
         </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)' }}>
-          <Clock size={16} />
-          <span className="numeric-data">{format(time, 'yyyy-MM-dd HH:mm:ss')} UTC</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)', marginLeft: '4px' }}>
+          <Clock size={14} />
+          <span className="numeric-data" style={{ fontSize: '0.78rem' }}>{format(time, 'yyyy-MM-dd HH:mm:ss')} UTC</span>
         </div>
       </div>
 

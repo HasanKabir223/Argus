@@ -36,7 +36,7 @@ export const MatchListPanel: React.FC<MatchListPanelProps> = ({ matches, selecte
     if (filter !== 'ALL' && match.status !== filter) return false;
     if (query.trim()) {
       const cp = CHECKPOINTS.find(c => c.id === match.checkpointId);
-      const haystack = `${match.personId} ${cp?.name ?? ''}`.toLowerCase();
+      const haystack = `${match.personId} ${cp?.name ?? ''} ${match.name ?? ''}`.toLowerCase();
       if (!haystack.includes(query.trim().toLowerCase())) return false;
     }
     return true;
@@ -51,18 +51,20 @@ export const MatchListPanel: React.FC<MatchListPanelProps> = ({ matches, selecte
         borderBottom: '1px solid var(--border-hairline)',
         display: 'flex',
         justifyContent: 'space-between',
-        alignItems: 'center'
+        alignItems: 'center',
+        backgroundColor: 'var(--bg-panel-raised)'
       }}>
-        <h2 className="mono-display" style={{ fontSize: '0.9rem', margin: 0, color: 'var(--text-secondary)' }}>ACTIVE MATCHES</h2>
+        <h2 className="mono-display" style={{ fontSize: '0.9rem', margin: 0, color: 'var(--text-secondary)' }}>ACTIVE SIGHTINGS</h2>
         <div style={{
-          backgroundColor: 'var(--accent-muted)',
-          color: 'var(--text-primary)',
+          backgroundColor: 'rgba(0, 217, 163, 0.15)',
+          color: 'var(--accent-signal)',
+          border: '1px solid rgba(0, 217, 163, 0.3)',
           padding: '2px 8px',
-          borderRadius: '12px',
+          borderRadius: '4px',
           fontSize: '0.75rem',
           fontFamily: "'IBM Plex Mono', monospace"
         }}>
-          {filteredMatches.length}
+          {filteredMatches.length} LOGGED
         </div>
       </div>
 
@@ -113,6 +115,8 @@ export const MatchListPanel: React.FC<MatchListPanelProps> = ({ matches, selecte
           if (match.status === 'PENDING REVIEW') statusBadgeClass = 'badge-pending';
           if (match.status === 'CONFIRMED') statusBadgeClass = 'badge-confirmed';
 
+          const cropUrl = match.faceCropUrl || `http://localhost:8000/static/gallery/${match.personId}_doe,_john.jpg`;
+
           return (
             <div
               key={match.id}
@@ -132,12 +136,12 @@ export const MatchListPanel: React.FC<MatchListPanelProps> = ({ matches, selecte
                 padding: '12px',
                 marginBottom: '8px',
                 cursor: 'pointer',
-                borderLeft: isSelected ? '2px solid var(--accent-signal)' : '1px solid var(--border-hairline)',
+                borderLeft: isSelected ? '3px solid var(--accent-signal)' : '1px solid var(--border-hairline)',
                 backgroundColor: isSelected ? 'var(--bg-panel-raised)' : 'var(--bg-panel)',
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <span className="mono-display" style={{ fontSize: '0.85rem' }}>ID: {match.personId}</span>
+                <span className="mono-display" style={{ fontSize: '0.85rem' }}>ID: {match.personId} ({match.name})</span>
                 <span className="numeric-data" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                   {formatDistanceToNow(match.timestamp, { addSuffix: true })}
                 </span>
@@ -151,24 +155,27 @@ export const MatchListPanel: React.FC<MatchListPanelProps> = ({ matches, selecte
                     height: '48px',
                     backgroundColor: 'var(--bg-void)',
                     border: '1px solid var(--border-hairline)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'var(--text-secondary)',
-                    fontSize: '0.7rem',
+                    overflow: 'hidden',
                     flexShrink: 0
                   }}
                 >
-                  IMG
+                  <img
+                    src={cropUrl}
+                    alt="Face crop"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = 'none';
+                    }}
+                  />
                 </div>
 
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', marginBottom: '4px' }}>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)', marginBottom: '4px' }}>
                     {cp?.name || match.checkpointId}
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{
-                      color: match.confidence > 0.8 ? 'var(--accent-signal)' : 'var(--text-secondary)',
+                      color: match.confidence >= 0.75 ? 'var(--accent-signal)' : 'var(--accent-alert)',
                       fontFamily: "'IBM Plex Mono', monospace",
                       fontSize: '1.1rem'
                     }}>
