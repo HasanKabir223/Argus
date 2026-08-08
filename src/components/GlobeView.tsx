@@ -96,22 +96,24 @@ export const GlobeView: React.FC<GlobeViewProps> = ({ matches, selectedPersonId 
         showAtmosphere={true}
         atmosphereColor="#38bdf8"
         atmosphereAltitude={0.2}
-        
+
         pointsData={pointsData}
         pointAltitude={0.02}
         pointRadius="size"
         pointColor="color"
         pointResolution={16}
+        pointLabel={(d: any) => `
+          <div style="
+            background: rgba(10,14,20,0.9);
+            border: 1px solid #3D4759;
+            color: #E8ECF1;
+            font-family: monospace;
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 2px;
+          ">${d.name}</div>
+        `}
 
-        labelsData={CHECKPOINTS}
-        labelLat="lat"
-        labelLng="lng"
-        labelText="name"
-        labelSize={1.2}
-        labelDotRadius={0.4}
-        labelColor={() => '#E8ECF1'}
-        labelResolution={2}
-        
         arcsData={arcsData}
         arcColor="color"
         arcDashLength={0.4}

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 :root {
   --bg-void: #0A0E14;
@@ -10,6 +10,7 @@
   --accent-signal: #00D9A3;
   --accent-alert: #FF4757;
   --accent-muted: #3D4759;
+  --panel-w: 360px;
 }
 
 * {
@@ -24,7 +25,7 @@ body {
   font-family: 'Inter', sans-serif;
   margin: 0;
   padding: 0;
-  overflow: hidden; /* Full-bleed canvas */
+  overflow: hidden;
   width: 100vw;
   height: 100vh;
 }
@@ -37,17 +38,16 @@ body {
 }
 
 h1, h2, h3, h4, h5, h6, .mono-display {
-  font-family: 'JetBrains Mono', monospace;
-  font-weight: 500;
-  letter-spacing: -0.02em;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .numeric-data {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'IBM Plex Mono', monospace;
   font-variant-numeric: tabular-nums;
 }
 
-/* Common Components */
 .panel {
   background-color: var(--bg-panel);
   border: 1px solid var(--border-hairline);
@@ -60,7 +60,7 @@ h1, h2, h3, h4, h5, h6, .mono-display {
 }
 
 .button {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'IBM Plex Mono', monospace;
   background: var(--bg-panel);
   border: 1px solid var(--border-hairline);
   color: var(--text-primary);
@@ -99,6 +99,112 @@ h1, h2, h3, h4, h5, h6, .mono-display {
   border-color: var(--accent-alert);
 }
 
+/* Status badges */
+.badge {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.badge-pending {
+  background: rgba(255, 71, 87, 0.12);
+  color: var(--accent-alert);
+  border: 1px solid rgba(255, 71, 87, 0.35);
+}
+
+.badge-confirmed {
+  background: rgba(0, 217, 163, 0.12);
+  color: var(--accent-signal);
+  border: 1px solid rgba(0, 217, 163, 0.35);
+}
+
+.badge-dismissed {
+  background: rgba(136, 146, 160, 0.1);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-hairline);
+}
+
+/* Filter tabs */
+.filter-tab {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+  padding: 5px 10px;
+  background: transparent;
+  border: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all 0.15s ease;
+}
+
+.filter-tab:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.filter-tab.active {
+  background: rgba(0, 217, 163, 0.1);
+  border-color: var(--accent-signal);
+  color: var(--accent-signal);
+}
+
+/* Match card hover feedback */
+.match-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.match-card:hover {
+  transform: translateX(-2px);
+  box-shadow: -2px 0 0 var(--accent-signal);
+}
+
+/* Side panel + timeline layout (responsive) */
+.side-panel {
+  position: absolute;
+  top: 64px;
+  right: 16px;
+  width: var(--panel-w);
+  bottom: 80px;
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
+
+.timeline-strip {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  right: calc(var(--panel-w) + 32px);
+  height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  z-index: 10;
+}
+
+@media (max-width: 900px) {
+  :root { --panel-w: min(320px, 90vw); }
+}
+
+@media (max-width: 640px) {
+  :root { --panel-w: 92vw; }
+  .side-panel { bottom: 140px; }
+  .timeline-strip { display: none; }
+}
+
+/* Focus visibility for keyboard navigation */
+button:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent-signal);
+  outline-offset: 2px;
+}
+
 /* Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
@@ -113,4 +219,49 @@ h1, h2, h3, h4, h5, h6, .mono-display {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
+}
+
+/* Leaflet dark-theme overrides */
+.leaflet-container {
+  background: var(--bg-void) !important;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.leaflet-top.leaflet-left {
+  top: 70px !important;
+}
+
+.leaflet-control-zoom a {
+  background-color: var(--bg-panel) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-hairline) !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background-color: var(--bg-panel-raised) !important;
+}
+
+.leaflet-control-attribution {
+  background-color: rgba(10, 14, 20, 0.7) !important;
+  color: var(--text-secondary) !important;
+}
+
+.leaflet-control-attribution a {
+  color: var(--text-secondary) !important;
+}
+
+.leaflet-popup-content-wrapper {
+  background: var(--bg-panel) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-hairline) !important;
+  border-radius: 2px !important;
+}
+
+.leaflet-popup-tip {
+  background: var(--bg-panel) !important;
+}
+
+.leaflet-marker-icon,
+.leaflet-interactive {
+  cursor: pointer !important;
 }
