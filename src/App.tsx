@@ -25,6 +25,10 @@ function App() {
   const [showCheckpoints, setShowCheckpoints] = useState(false);
   const [showAuditLog, setShowAuditLog] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  // null = live; a timestamp (ms) = operator has dragged the timeline
+  // playhead back and the globe/map should show state as of that moment
+  // (PRD §5.3 Screen 5: "Drag playhead → globe/map replays up to that point").
+  const [replayTime, setReplayTime] = useState<number | null>(null);
 
   // Boot sequence
   useEffect(() => {
@@ -180,6 +184,12 @@ function App() {
         .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
     : [];
   const pendingCount = matches.filter(m => m.status === 'PENDING REVIEW').length;
+  // The globe/map operate on the replay-scoped view; the match list and
+  // pending count stay tied to full live state so review workload never
+  // silently hides just because someone scrubbed the timeline back.
+  const visibleMatches = replayTime !== null
+    ? matches.filter(m => m.timestamp.getTime() <= replayTime)
+    : matches;
 
   return (
     <>
@@ -197,9 +207,9 @@ function App() {
 
       {/* Main Viewport: 3D Globe vs 2D Tactical Map */}
       {viewMode === 'globe' ? (
-        <GlobeView matches={matches} selectedPersonId={selectedPersonId} />
+        <GlobeView matches={visibleMatches} selectedPersonId={selectedPersonId} />
       ) : (
-        <MapView matches={matches} selectedPersonId={selectedPersonId} onSelectCheckpoint={handleSelectCheckpoint} />
+        <MapView matches={visibleMatches} selectedPersonId={selectedPersonId} onSelectCheckpoint={handleSelectCheckpoint} />
       )}
 
       <MatchListPanel
@@ -208,7 +218,12 @@ function App() {
         onSelectPerson={handleSelectPerson}
       />
 
-      <TimelineStrip matches={matches} onSelectPerson={handleSelectPerson} />
+      <TimelineStrip
+        matches={matches}
+        onSelectPerson={handleSelectPerson}
+        replayTime={replayTime}
+        onScrub={setReplayTime}
+      />
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       {showCheckpoints && (

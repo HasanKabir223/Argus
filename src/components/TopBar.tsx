@@ -75,9 +75,9 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   return (
     <div style={{
-      display: 'flex',
+      display: 'grid',
+      gridTemplateColumns: 'auto minmax(0, 1fr) auto',
       alignItems: 'center',
-      justifyContent: 'space-between',
       padding: '0 24px',
       height: '56px',
       backgroundColor: 'rgba(18, 22, 31, 0.88)',
@@ -88,7 +88,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       left: 0,
       right: 0,
       zIndex: 100,
-      gap: '24px',
+      columnGap: '24px',
     }}>
       {/* Title & Live Status */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexShrink: 0 }}>
@@ -128,7 +128,8 @@ export const TopBar: React.FC<TopBarProps> = ({
         )}
       </div>
 
-      {/* AI Telemetry HUD */}
+      {/* AI Telemetry HUD — the one zone allowed to yield space; scrolls
+          horizontally instead of pushing the action zone off-screen. */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -136,24 +137,28 @@ export const TopBar: React.FC<TopBarProps> = ({
         fontSize: '0.75rem',
         fontFamily: "'IBM Plex Mono', monospace",
         color: 'var(--text-secondary)',
-        flexShrink: 0,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+        minWidth: 0,
+        overflowX: 'auto',
+        overflowY: 'hidden',
+        whiteSpace: 'nowrap',
+        scrollbarWidth: 'none',
+      }} className="topbar-hud">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
           <Cpu size={13} color="var(--accent-signal)" />
           <span>FPS: <strong style={{ color: 'var(--text-primary)' }}>{metrics?.pipeline?.estimated_fps || '30.0'}</strong></span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
           <Zap size={13} color="#38bdf8" />
           <span>EMBED: <strong style={{ color: 'var(--text-primary)' }}>{metrics?.pipeline?.last_embedding_ms ? `${metrics.pipeline.last_embedding_ms.toFixed(1)}ms` : '<2.5ms'}</strong></span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
           <Search size={13} color="#a855f7" />
           <span>FAISS: <strong style={{ color: 'var(--text-primary)' }}>{metrics?.pipeline?.last_search_ms ? `${metrics.pipeline.last_search_ms.toFixed(2)}ms` : '<0.3ms'}</strong></span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
           <span style={{ color: 'var(--accent-signal)' }}>DEDUP:</span>
           <strong style={{ color: 'var(--text-primary)' }}>
             {metrics?.deduplication?.deduplication_savings_percent ? `${metrics.deduplication.deduplication_savings_percent}%` : '99.3%'}
@@ -261,6 +266,9 @@ export const TopBar: React.FC<TopBarProps> = ({
           .topbar-btn:hover:not(:disabled) {
             transform: none;
           }
+        }
+        .topbar-hud::-webkit-scrollbar {
+          display: none;
         }
       `}</style>
     </div>

@@ -3,6 +3,7 @@ import { Search } from 'lucide-react';
 import { CHECKPOINTS, type Match } from '../data/mockData';
 import { formatDistanceToNow } from 'date-fns';
 import { getConfidenceColor, getConfidenceLabel } from '../utils/confidence';
+import { FaceThumb } from './FaceThumb';
 
 interface MatchListPanelProps {
   matches: Match[];
@@ -86,64 +87,67 @@ export const MatchListPanel: React.FC<MatchListPanelProps> = ({ matches, selecte
 
   return (
     <div className="panel side-panel" role="region" aria-label="Active matches">
-      <div style={{
-        padding: '12px 16px',
-        borderBottom: '1px solid var(--border-hairline)',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        backgroundColor: 'var(--bg-panel-raised)'
-      }}>
-        <h2 className="mono-display" style={{ fontSize: '0.9rem', margin: 0, color: 'var(--text-secondary)' }}>ACTIVE SIGHTINGS</h2>
+      {/* Control zone: header + search + filters share a raised surface and
+          end in one hairline, so the eye reads "controls" as distinct from
+          the scrollable data list below — rather than one dense column. */}
+      <div style={{ backgroundColor: 'var(--bg-panel-raised)', borderBottom: '1px solid var(--border-hairline)' }}>
         <div style={{
-          backgroundColor: 'rgba(0, 217, 163, 0.15)',
-          color: 'var(--accent-signal)',
-          border: '1px solid rgba(0, 217, 163, 0.3)',
-          padding: '2px 8px',
-          borderRadius: '4px',
-          fontSize: '0.75rem',
-          fontFamily: "'IBM Plex Mono', monospace"
+          padding: '12px 16px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
         }}>
-          {filteredMatches.length} LOGGED
+          <h2 className="mono-display" style={{ fontSize: '0.9rem', margin: 0, color: 'var(--text-secondary)' }}>ACTIVE SIGHTINGS</h2>
+          <div style={{
+            backgroundColor: 'rgba(0, 217, 163, 0.15)',
+            color: 'var(--accent-signal)',
+            border: '1px solid rgba(0, 217, 163, 0.3)',
+            padding: '2px 8px',
+            borderRadius: '4px',
+            fontSize: '0.75rem',
+            fontFamily: "'IBM Plex Mono', monospace"
+          }}>
+            {filteredMatches.length} LOGGED
+          </div>
         </div>
-      </div>
 
-      <div style={{ padding: '10px 12px 0 12px' }}>
-        <div style={{ position: 'relative' }}>
-          <Search size={13} style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-          <input
-            ref={searchRef}
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search ID or checkpoint... (press /)"
-            aria-label="Search matches by ID or checkpoint"
-            style={{
-              width: '100%',
-              background: 'var(--bg-void)',
-              border: '1px solid var(--border-hairline)',
-              color: 'var(--text-primary)',
-              fontFamily: "'IBM Plex Mono', monospace",
-              fontSize: '0.75rem',
-              padding: '7px 8px 7px 28px',
-              outline: 'none',
-            }}
-            onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-signal)')}
-            onBlur={e => (e.currentTarget.style.borderColor = 'var(--border-hairline)')}
-          />
+        <div style={{ padding: '10px 12px 0 12px' }}>
+          <div style={{ position: 'relative' }}>
+            <Search size={13} style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+            <input
+              ref={searchRef}
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search ID or checkpoint... (press /)"
+              aria-label="Search matches by ID or checkpoint"
+              style={{
+                width: '100%',
+                background: 'var(--bg-void)',
+                border: '1px solid var(--border-hairline)',
+                color: 'var(--text-primary)',
+                fontFamily: "'IBM Plex Mono', monospace",
+                fontSize: '0.75rem',
+                padding: '7px 8px 7px 28px',
+                outline: 'none',
+              }}
+              onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent-signal)')}
+              onBlur={e => (e.currentTarget.style.borderColor = 'var(--border-hairline)')}
+            />
+          </div>
         </div>
-      </div>
 
-      <div style={{ display: 'flex', gap: '6px', padding: '10px 12px', flexWrap: 'wrap' }} role="group" aria-label="Filter by status">
-        {filters.map(f => (
-          <button
-            key={f}
-            className={`filter-tab ${filter === f ? 'active' : ''}`}
-            onClick={() => setFilter(f)}
-            aria-pressed={filter === f}
-          >
-            {f}
-          </button>
-        ))}
+        <div style={{ display: 'flex', gap: '6px', padding: '10px 12px', flexWrap: 'wrap' }} role="group" aria-label="Filter by status">
+          {filters.map(f => (
+            <button
+              key={f}
+              className={`filter-tab ${filter === f ? 'active' : ''}`}
+              onClick={() => setFilter(f)}
+              aria-pressed={filter === f}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
@@ -199,14 +203,7 @@ export const MatchListPanel: React.FC<MatchListPanelProps> = ({ matches, selecte
                     flexShrink: 0
                   }}
                 >
-                  <img
-                    src={cropUrl}
-                    alt="Face crop"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = 'none';
-                    }}
-                  />
+                  <FaceThumb src={cropUrl} alt="Face crop" personId={match.personId} />
                 </div>
 
                 <div style={{ flex: 1 }}>

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { type Match, CHECKPOINTS } from '../data/mockData';
 import { X, CheckCircle, AlertTriangle, Copy, Check, ShieldAlert, Flag, History } from 'lucide-react';
 import { getConfidenceColor } from '../utils/confidence';
+import { FaceThumb } from './FaceThumb';
 
 interface MatchDetailModalProps {
   match: Match;
@@ -183,14 +184,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                 position: 'relative'
               }}
             >
-              <img
-                src={refImgSrc}
-                alt="Reference target"
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
-                }}
-              />
+              <FaceThumb src={refImgSrc} alt="Reference target" personId={match.personId} />
               <div style={{
                 position: 'absolute',
                 bottom: '4px',
@@ -226,14 +220,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                 position: 'relative'
               }}
             >
-              <img
-                src={liveImgSrc}
-                alt="Live checkpoint crop"
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
-                }}
-              />
+              <FaceThumb src={liveImgSrc} alt="Live checkpoint crop" personId={match.personId} />
               <div style={{
                 position: 'absolute',
                 bottom: '4px',

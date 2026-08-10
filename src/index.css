@@ -194,7 +194,7 @@ h1, h2, h3, h4, h5, h6, .mono-display {
 /* Side panel + timeline layout (responsive) */
 .side-panel {
   position: absolute;
-  top: 64px;
+  top: 72px;
   right: 16px;
   width: var(--panel-w);
   bottom: 80px;
