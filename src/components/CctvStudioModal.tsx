@@ -16,13 +16,66 @@ interface CctvStudioModalProps {
 export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPinpointMatch }) => {
   const [clips, setClips] = useState<CctvClip[]>([]);
   const [selectedClipId, setSelectedClipId] = useState<string>('clip-gct');
+  const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState<CctvProcessResult | null>(null);
   const [currentVideoTime, setCurrentVideoTime] = useState(0);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'matches' | 'crops'>('matches');
+  const [isDragging, setIsDragging] = useState(false);
+  const [videoDims, setVideoDims] = useState<{ width: number; height: number; offsetX: number; offsetY: number }>({
+    width: 0,
+    height: 0,
+    offsetX: 0,
+    offsetY: 0
+  });
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Measure actual rendered video content box inside container (accounting for letterbox/pillarbox)
+  const updateVideoBounds = () => {
+    if (!videoRef.current || !containerRef.current) return;
+    const video = videoRef.current;
+    const container = containerRef.current;
+
+    const cw = container.clientWidth;
+    const ch = container.clientHeight;
+    const vw = video.videoWidth || 640;
+    const vh = video.videoHeight || 480;
+
+    if (cw === 0 || ch === 0) return;
+
+    const containerAspect = cw / ch;
+    const videoAspect = vw / vh;
+
+    let rw = cw;
+    let rh = ch;
+    let ox = 0;
+    let oy = 0;
+
+    if (videoAspect > containerAspect) {
+      rw = cw;
+      rh = cw / videoAspect;
+      oy = (ch - rh) / 2;
+    } else {
+      rh = ch;
+      rw = ch * videoAspect;
+      ox = (cw - rw) / 2;
+    }
+
+    setVideoDims({ width: rw, height: rh, offsetX: ox, offsetY: oy });
+  };
+
+  useEffect(() => {
+    window.addEventListener('resize', updateVideoBounds);
+    return () => window.removeEventListener('resize', updateVideoBounds);
+  }, []);
+
+  const getCctvStreamUrl = (filename: string) => {
+    return `http://localhost:8000/static/cctv/${encodeURIComponent(filename)}`;
+  };
 
   useEffect(() => {
     const loadClips = async () => {
@@ -30,6 +83,8 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
       setClips(available);
       if (available.length > 0) {
         setSelectedClipId(available[0].id);
+        setActiveVideoUrl(getCctvStreamUrl(available[0].filename));
+        handleRunPipeline(available[0].id, available[0].filename);
       }
     };
     loadClips();
@@ -37,41 +92,67 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
 
   const currentClip = clips.find(c => c.id === selectedClipId) || clips[0];
 
-  const handleRunPipeline = async (clipId?: string) => {
+  const handleRunPipeline = async (clipId?: string, filename?: string) => {
     const targetId = clipId || selectedClipId;
+    const targetClip = clips.find(c => c.id === targetId);
+    const fname = filename || targetClip?.filename;
+    
+    if (fname) {
+      setActiveVideoUrl(getCctvStreamUrl(fname));
+    }
+
     setIsProcessing(true);
+    setUploadStatus(`Buffalo_s inference on ${fname || 'CCTV video'}...`);
     setResult(null);
 
     const res = await processCctvClip(targetId);
     setResult(res);
     setIsProcessing(false);
+    setUploadStatus(null);
 
     if (videoRef.current) {
       videoRef.current.currentTime = 0;
       videoRef.current.play().catch(() => {});
+      setTimeout(updateVideoBounds, 200);
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const processUploadedFile = async (file: File) => {
+    const localUrl = URL.createObjectURL(file);
+    setActiveVideoUrl(localUrl);
 
     setIsProcessing(true);
-    setUploadStatus(`Uploading & analyzing ${file.name}...`);
+    setUploadStatus(`Ingesting with buffalo_s model & FAISS: ${file.name}...`);
 
     const res = await uploadCctvClip(file, currentClip?.checkpoint_id || 'cp-01');
     setResult(res);
     setIsProcessing(false);
     setUploadStatus(null);
 
-    // Refresh clips list
+    // Refresh clips catalog
     const updatedClips = await fetchCctvClips();
     setClips(updatedClips);
+    if (updatedClips.length > 0) {
+      setSelectedClipId(updatedClips[updatedClips.length - 1].id);
+    }
 
     if (videoRef.current) {
       videoRef.current.currentTime = 0;
       videoRef.current.play().catch(() => {});
+      setTimeout(updateVideoBounds, 200);
     }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) processUploadedFile(file);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) processUploadedFile(file);
   };
 
   const handleTimeUpdate = () => {
@@ -81,13 +162,27 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
   };
 
   // Find active bounding boxes corresponding to current playback timestamp
-  const activeFrameData = result?.sample_annotations?.reduce((prev, curr) => {
-    return Math.abs(curr.timestamp_sec - currentVideoTime) < Math.abs(prev.timestamp_sec - currentVideoTime)
-      ? curr
-      : prev;
-  }, result.sample_annotations[0]);
+  const activeDetections = React.useMemo(() => {
+    if (!result?.sample_annotations || result.sample_annotations.length === 0) {
+      return [];
+    }
+    let best = result.sample_annotations[0];
+    let minDiff = Math.abs(best.timestamp_sec - currentVideoTime);
 
-  const activeDetections = activeFrameData?.detections || [];
+    for (let i = 1; i < result.sample_annotations.length; i++) {
+      const curr = result.sample_annotations[i];
+      const diff = Math.abs(curr.timestamp_sec - currentVideoTime);
+      if (diff < minDiff) {
+        minDiff = diff;
+        best = curr;
+      }
+    }
+
+    if (minDiff > 1.2) {
+      return [];
+    }
+    return best.detections || [];
+  }, [result, currentVideoTime]);
 
   return (
     <div
@@ -125,10 +220,10 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
           <Radio size={18} color="var(--accent-signal)" style={{ animation: 'pulse 1.5s infinite' }} />
           <div>
             <h2 className="mono-display" style={{ fontSize: '1.05rem', margin: 0, letterSpacing: '0.04em' }}>
-              CCTV SURVEILLANCE INGESTION & LSH HASHING STUDIO
+              CCTV SURVEILLANCE INGESTION & MATCHING STUDIO
             </h2>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>
-              HIGH-THROUGHPUT MULTI-FACE DETECTION // RETINAFACE-MOBILENET // ARCFACE 512-D // FAISS HNSW ANN
+              HIGH-THROUGHPUT MULTI-FACE DETECTION // RETINAFACE // ULTRA-FAST 64-D // FAISS HNSW ANN
             </div>
           </div>
         </div>
@@ -144,63 +239,67 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
 
       {/* Main Studio Body */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/* Left Column: Camera Channel Switcher & Upload Controls */}
+        {/* Left Column: Video Uploader & Feed Selector */}
         <div style={{
-          width: '320px',
+          width: '340px',
           borderRight: '1px solid var(--border-hairline)',
           backgroundColor: 'rgba(12, 16, 23, 0.95)',
           display: 'flex',
           flexDirection: 'column',
           overflowY: 'auto',
-          padding: '16px'
+          padding: '16px',
+          gap: '14px'
         }}>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace", marginBottom: '10px', textTransform: 'uppercase' }}>
-            SELECT SURVEILLANCE FEED
+          {/* Primary Upload Dropzone */}
+          <div
+            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            style={{
+              border: isDragging ? '2px dashed var(--accent-signal)' : '1px dashed var(--border-hairline)',
+              backgroundColor: isDragging ? 'rgba(0, 217, 163, 0.08)' : 'rgba(18, 22, 31, 0.7)',
+              padding: '16px',
+              textAlign: 'center',
+              borderRadius: '2px',
+              cursor: isProcessing ? 'wait' : 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              accept="video/mp4,video/avi,video/quicktime,video/webm,video/mkv"
+              style={{ display: 'none' }}
+            />
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              backgroundColor: 'rgba(0, 217, 163, 0.12)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '1px solid var(--accent-signal)'
+            }}>
+              <Upload size={18} color="var(--accent-signal)" />
+            </div>
+            <div>
+              <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                UPLOAD CCTV FOOTAGE
+              </div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace", marginTop: '2px' }}>
+                Drag & Drop or Click (.MP4, .MOV, .AVI, .WEBM)
+              </div>
+            </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
-            {clips.map(clip => {
-              const isSelected = selectedClipId === clip.id;
-              return (
-                <div
-                  key={clip.id}
-                  onClick={() => {
-                    setSelectedClipId(clip.id);
-                    setResult(null);
-                  }}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: '2px',
-                    border: isSelected ? '1px solid var(--accent-signal)' : '1px solid var(--border-hairline)',
-                    backgroundColor: isSelected ? 'rgba(0, 217, 163, 0.08)' : 'var(--bg-panel)',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                    <span className="mono-display" style={{ fontSize: '0.82rem', color: isSelected ? 'var(--accent-signal)' : 'var(--text-primary)' }}>
-                      {clip.checkpoint_name}
-                    </span>
-                    <span style={{
-                      fontSize: '0.65rem',
-                      fontFamily: "'IBM Plex Mono', monospace",
-                      color: 'var(--accent-signal)',
-                      backgroundColor: 'rgba(0, 217, 163, 0.15)',
-                      padding: '1px 5px',
-                      borderRadius: '2px'
-                    }}>
-                      ONLINE
-                    </span>
-                  </div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>
-                    {clip.camera_id}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Action Buttons */}
+          {/* Rescan / Processing Action */}
           <button
             onClick={() => handleRunPipeline()}
             disabled={isProcessing}
@@ -212,62 +311,87 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
               backgroundColor: 'var(--accent-signal)',
               color: '#0A0E14',
               border: 'none',
-              padding: '12px',
-              fontSize: '0.85rem',
-              fontWeight: 600,
+              padding: '10px',
+              fontSize: '0.82rem',
+              fontWeight: 700,
               fontFamily: "'IBM Plex Mono', monospace",
               cursor: isProcessing ? 'wait' : 'pointer',
-              marginBottom: '12px',
-              boxShadow: '0 4px 16px rgba(0, 217, 163, 0.25)'
+              boxShadow: '0 4px 16px rgba(0, 217, 163, 0.25)',
+              borderRadius: '2px'
             }}
           >
-            <RefreshCw size={15} className={isProcessing ? 'spinning' : ''} />
-            {isProcessing ? 'SCANNING & HASHING...' : 'INGEST & SCAN CCTV CLIP'}
-          </button>
-
-          {/* Video File Uploader */}
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileUpload}
-            accept="video/mp4,video/avi,video/quicktime"
-            style={{ display: 'none' }}
-          />
-
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isProcessing}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              backgroundColor: 'transparent',
-              color: 'var(--text-primary)',
-              border: '1px dashed var(--border-hairline)',
-              padding: '10px',
-              fontSize: '0.78rem',
-              fontFamily: "'IBM Plex Mono', monospace",
-              cursor: isProcessing ? 'wait' : 'pointer'
-            }}
-          >
-            <Upload size={14} />
-            UPLOAD CUSTOM CCTV CLIP (.MP4)
+            <RefreshCw size={14} className={isProcessing ? 'spinning' : ''} />
+            {isProcessing ? 'DETECTING & HASHING...' : 'RE-SCAN SELECTED CLIP'}
           </button>
 
           {uploadStatus && (
-            <div style={{ fontSize: '0.72rem', color: 'var(--accent-signal)', marginTop: '8px', fontFamily: "'IBM Plex Mono', monospace" }}>
+            <div style={{
+              fontSize: '0.72rem',
+              color: 'var(--accent-signal)',
+              padding: '6px 10px',
+              backgroundColor: 'rgba(0, 217, 163, 0.08)',
+              border: '1px solid rgba(0, 217, 163, 0.2)',
+              fontFamily: "'IBM Plex Mono', monospace"
+            }}>
               {uploadStatus}
             </div>
           )}
 
-          {/* Live Telemetry Card */}
+          {/* Active Feeds / Discovered Video Catalog */}
+          <div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace", marginBottom: '8px', textTransform: 'uppercase' }}>
+              ACTIVE SURVEILLANCE FEEDS ({clips.length})
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '220px', overflowY: 'auto' }}>
+              {clips.map(clip => {
+                const isSelected = selectedClipId === clip.id;
+                return (
+                  <div
+                    key={clip.id}
+                    onClick={() => {
+                      setSelectedClipId(clip.id);
+                      handleRunPipeline(clip.id, clip.filename);
+                    }}
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: '2px',
+                      border: isSelected ? '1px solid var(--accent-signal)' : '1px solid var(--border-hairline)',
+                      backgroundColor: isSelected ? 'rgba(0, 217, 163, 0.1)' : 'var(--bg-panel)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                      <span className="mono-display" style={{ fontSize: '0.78rem', color: isSelected ? 'var(--accent-signal)' : 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }}>
+                        {clip.filename}
+                      </span>
+                      <span style={{
+                        fontSize: '0.62rem',
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        color: 'var(--accent-signal)',
+                        backgroundColor: 'rgba(0, 217, 163, 0.15)',
+                        padding: '1px 4px'
+                      }}>
+                        {clip.camera_id.split(' ')[0]}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                      {clip.checkpoint_name}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Telemetry Card */}
           {result && (
-            <div style={{ marginTop: '20px', padding: '12px', backgroundColor: 'var(--bg-void)', border: '1px solid var(--border-hairline)' }}>
-              <div style={{ fontSize: '0.72rem', color: 'var(--accent-signal)', fontFamily: "'IBM Plex Mono', monospace", marginBottom: '8px', textTransform: 'uppercase' }}>
+            <div style={{ padding: '10px', backgroundColor: 'var(--bg-void)', border: '1px solid var(--border-hairline)', borderRadius: '2px' }}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--accent-signal)', fontFamily: "'IBM Plex Mono', monospace", marginBottom: '6px', textTransform: 'uppercase' }}>
                 AI PIPELINE TELEMETRY
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.72rem', fontFamily: "'IBM Plex Mono', monospace" }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.7rem', fontFamily: "'IBM Plex Mono', monospace" }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: 'var(--text-secondary)' }}>EFFECTIVE FPS:</span>
                   <strong style={{ color: 'var(--text-primary)' }}>{result.telemetry.effective_fps} FPS</strong>
@@ -281,7 +405,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                   <strong style={{ color: '#38bdf8' }}>{result.telemetry.avg_detection_ms} ms</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>ARCFACE + LSH:</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>MOBILENET-V3 EMBEDDING:</span>
                   <strong style={{ color: '#a855f7' }}>{result.telemetry.avg_embedding_ms} ms</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -300,22 +424,27 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
         {/* Center & Right Column: Surveillance Video Monitor & Dynamic Bounding Box Overlay */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', backgroundColor: '#070A0E', padding: '16px' }}>
           {/* CCTV Viewport Container */}
-          <div style={{
-            position: 'relative',
-            width: '100%',
-            aspectRatio: '16/9',
-            maxHeight: '480px',
-            backgroundColor: '#000000',
-            border: '1px solid var(--border-hairline)',
-            overflow: 'hidden',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.8)'
-          }}>
+          <div
+            ref={containerRef}
+            style={{
+              position: 'relative',
+              width: '100%',
+              aspectRatio: '16/9',
+              maxHeight: '480px',
+              backgroundColor: '#000000',
+              border: '1px solid var(--border-hairline)',
+              overflow: 'hidden',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.8)'
+            }}
+          >
             {/* Real Video Element */}
-            {currentClip && (
+            {activeVideoUrl ? (
               <video
                 ref={videoRef}
-                src={`http://localhost:8000/static/cctv/${currentClip.filename}`}
+                src={activeVideoUrl}
                 onTimeUpdate={handleTimeUpdate}
+                onLoadedMetadata={updateVideoBounds}
+                onPlay={updateVideoBounds}
                 controls={false}
                 loop
                 muted
@@ -326,6 +455,96 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                   objectFit: 'contain'
                 }}
               />
+            ) : (
+              <div style={{
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--text-secondary)',
+                fontFamily: "'IBM Plex Mono', monospace",
+                fontSize: '0.85rem'
+              }}>
+                SELECT A SURVEILLANCE FEED OR UPLOAD CCTV FOOTAGE
+              </div>
+            )}
+
+            {/* Tactical Cyber Loading Screen HUD on Viewport */}
+            {isProcessing && (
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(7, 10, 14, 0.88)',
+                backdropFilter: 'blur(6px)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 30,
+                fontFamily: "'IBM Plex Mono', monospace"
+              }}>
+                {/* Scanning Laser Line */}
+                <div style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: '2px',
+                  background: 'linear-gradient(90deg, transparent, #00D9A3, #38BDF8, transparent)',
+                  boxShadow: '0 0 15px #00D9A3, 0 0 30px #38BDF8',
+                  animation: 'scanLaser 1.8s ease-in-out infinite'
+                }} />
+
+                {/* Rotating Tactical Reticle */}
+                <div style={{ position: 'relative', width: '80px', height: '80px', marginBottom: '16px' }}>
+                  <div style={{
+                    position: 'absolute',
+                    inset: 0,
+                    borderRadius: '50%',
+                    border: '2px dashed #00D9A3',
+                    animation: 'spin 3s linear infinite'
+                  }} />
+                  <div style={{
+                    position: 'absolute',
+                    inset: '10px',
+                    borderRadius: '50%',
+                    border: '1.5px solid #38BDF8',
+                    animation: 'spinReverse 2s linear infinite'
+                  }} />
+                  <div style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#00D9A3'
+                  }}>
+                    <Radio size={24} style={{ animation: 'pulse 1s infinite' }} />
+                  </div>
+                </div>
+
+                {/* Loading Status Text & Telemetry */}
+                <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--accent-signal)', letterSpacing: '0.06em', marginBottom: '4px' }}>
+                  MOBILENET-V3 FAST INFERENCE & FAISS ANN SCANNING
+                </div>
+                <div style={{ fontSize: '0.74rem', color: '#38BDF8', marginBottom: '14px', maxWidth: '80%', textAlign: 'center' }}>
+                  {uploadStatus || 'EXTRACTING FRAMES // ULTRA-FAST 64-D // HNSW VECTOR SEARCH'}
+                </div>
+
+                {/* Animated Progress Bar */}
+                <div style={{ width: '280px', height: '4px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
+                  <div style={{
+                    width: '100%',
+                    height: '100%',
+                    background: 'linear-gradient(90deg, #00D9A3, #38BDF8)',
+                    animation: 'progressIndeterminate 1.2s infinite'
+                  }} />
+                </div>
+              </div>
             )}
 
             {/* Dynamic Real-Time Bounding Box HUD Overlay */}
@@ -336,33 +555,40 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                 const isReview = det.status === 'PENDING_REVIEW';
                 const borderColor = isConfirmed ? 'var(--accent-signal)' : isReview ? 'var(--accent-alert)' : '#38bdf8';
 
+                // Compute bounding box pixel position mapped directly to the video frame inside container
+                const boxLeft = videoDims.width > 0 ? (videoDims.offsetX + normX * videoDims.width) : (normX * 100);
+                const boxTop = videoDims.height > 0 ? (videoDims.offsetY + normY * videoDims.height) : (normY * 100);
+                const boxWidth = videoDims.width > 0 ? (normW * videoDims.width) : (normW * 100);
+                const boxHeight = videoDims.height > 0 ? (normH * videoDims.height) : (normH * 100);
+                const isPixel = videoDims.width > 0;
+
                 return (
                   <div
                     key={idx}
                     style={{
                       position: 'absolute',
-                      left: `${normX * 100}%`,
-                      top: `${normY * 100}%`,
-                      width: `${normW * 100}%`,
-                      height: `${normH * 100}%`,
+                      left: isPixel ? `${boxLeft}px` : `${boxLeft}%`,
+                      top: isPixel ? `${boxTop}px` : `${boxTop}%`,
+                      width: isPixel ? `${boxWidth}px` : `${boxWidth}%`,
+                      height: isPixel ? `${boxHeight}px` : `${boxHeight}%`,
                       border: `2px solid ${borderColor}`,
-                      boxShadow: `0 0 12px ${borderColor}`,
+                      boxShadow: `0 0 16px ${borderColor}, inset 0 0 8px rgba(0, 217, 163, 0.2)`,
                       boxSizing: 'border-box',
-                      transition: 'all 0.1s ease-out'
+                      transition: 'all 0.08s ease-out'
                     }}
                   >
                     {/* Reticle Corner Brackets */}
-                    <div style={{ position: 'absolute', top: '-4px', left: '-4px', width: '8px', height: '8px', borderTop: `2px solid ${borderColor}`, borderLeft: `2px solid ${borderColor}` }} />
-                    <div style={{ position: 'absolute', top: '-4px', right: '-4px', width: '8px', height: '8px', borderTop: `2px solid ${borderColor}`, borderRight: `2px solid ${borderColor}` }} />
-                    <div style={{ position: 'absolute', bottom: '-4px', left: '-4px', width: '8px', height: '8px', borderBottom: `2px solid ${borderColor}`, borderLeft: `2px solid ${borderColor}` }} />
-                    <div style={{ position: 'absolute', bottom: '-4px', right: '-4px', width: '8px', height: '8px', borderBottom: `2px solid ${borderColor}`, borderRight: `2px solid ${borderColor}` }} />
+                    <div style={{ position: 'absolute', top: '-4px', left: '-4px', width: '8px', height: '8px', borderTop: `3px solid ${borderColor}`, borderLeft: `3px solid ${borderColor}` }} />
+                    <div style={{ position: 'absolute', top: '-4px', right: '-4px', width: '8px', height: '8px', borderTop: `3px solid ${borderColor}`, borderRight: `3px solid ${borderColor}` }} />
+                    <div style={{ position: 'absolute', bottom: '-4px', left: '-4px', width: '8px', height: '8px', borderBottom: `3px solid ${borderColor}`, borderLeft: `3px solid ${borderColor}` }} />
+                    <div style={{ position: 'absolute', bottom: '-4px', right: '-4px', width: '8px', height: '8px', borderBottom: `3px solid ${borderColor}`, borderRight: `3px solid ${borderColor}` }} />
 
                     {/* Floating Identification Tag */}
                     <div style={{
                       position: 'absolute',
-                      top: '-24px',
+                      top: '-26px',
                       left: '0',
-                      backgroundColor: 'rgba(10, 14, 20, 0.92)',
+                      backgroundColor: 'rgba(10, 14, 20, 0.95)',
                       border: `1px solid ${borderColor}`,
                       color: '#FFFFFF',
                       fontFamily: "'IBM Plex Mono', monospace",
@@ -371,7 +597,8 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                       whiteSpace: 'nowrap',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '4px'
+                      gap: '4px',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.8)'
                     }}>
                       {isConfirmed && <CheckCircle size={10} color="var(--accent-signal)" />}
                       {isReview && <AlertTriangle size={10} color="var(--accent-alert)" />}
@@ -444,97 +671,227 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
             </div>
           </div>
 
-          {/* Sighted Matches Drawer below video */}
+          {/* Sighted Matches & Detected Crops Drawer below video */}
           <div style={{ marginTop: '16px', flex: 1 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <div style={{ fontSize: '0.82rem', fontFamily: "'IBM Plex Mono', monospace", color: 'var(--text-secondary)' }}>
-                IDENTIFIED SUSPECTS & PERSONS OF INTEREST ({result?.matches?.length || 0})
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => setActiveTab('matches')}
+                  style={{
+                    backgroundColor: activeTab === 'matches' ? 'rgba(0, 217, 163, 0.15)' : 'var(--bg-panel)',
+                    border: activeTab === 'matches' ? '1px solid var(--accent-signal)' : '1px solid var(--border-hairline)',
+                    color: activeTab === 'matches' ? 'var(--accent-signal)' : 'var(--text-secondary)',
+                    padding: '5px 12px',
+                    fontSize: '0.75rem',
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    cursor: 'pointer',
+                    borderRadius: '2px',
+                    fontWeight: 600
+                  }}
+                >
+                  WATCHLIST MATCHES ({result?.matches?.length || 0})
+                </button>
+                <button
+                  onClick={() => setActiveTab('crops')}
+                  style={{
+                    backgroundColor: activeTab === 'crops' ? 'rgba(56, 189, 248, 0.15)' : 'var(--bg-panel)',
+                    border: activeTab === 'crops' ? '1px solid #38bdf8' : '1px solid var(--border-hairline)',
+                    color: activeTab === 'crops' ? '#38bdf8' : 'var(--text-secondary)',
+                    padding: '5px 12px',
+                    fontSize: '0.75rem',
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    cursor: 'pointer',
+                    borderRadius: '2px',
+                    fontWeight: 600
+                  }}
+                >
+                  ALL DETECTED FACE CROPS ({result?.detected_crops?.length || 0})
+                </button>
               </div>
+
+              {result && (
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                  FAISS HNSW ANN // 64-D EMBEDDING // {result.telemetry.total_faces_detected} FRAMES SCANNED
+                </div>
+              )}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '10px' }}>
-              {result?.matches?.map((m, idx) => {
-                const isConfirmed = m.tier === 'CONFIRMED';
-                return (
-                  <div
-                    key={idx}
-                    style={{
-                      display: 'flex',
-                      gap: '12px',
-                      backgroundColor: 'var(--bg-panel)',
-                      border: isConfirmed ? '1px solid var(--accent-signal)' : '1px solid var(--accent-alert)',
-                      padding: '12px',
-                      borderRadius: '2px'
-                    }}
-                  >
-                    {/* Face crop preview */}
-                    <div style={{ width: '64px', height: '64px', backgroundColor: '#000', border: '1px solid var(--border-hairline)', overflow: 'hidden', flexShrink: 0 }}>
-                      <img
-                        src={`http://localhost:8000${m.face_crop_path}`}
-                        alt="Face crop"
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
-                      />
-                    </div>
+            {activeTab === 'matches' ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))', gap: '12px' }}>
+                {result?.matches?.map((m, idx) => {
+                  const isConfirmed = m.tier === 'CONFIRMED';
+                  const tierColor = isConfirmed ? 'var(--accent-signal)' : 'var(--accent-alert)';
 
-                    {/* Metadata & Actions */}
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-                          <span className="mono-display" style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-                            {m.name}
+                  return (
+                    <div
+                      key={idx}
+                      style={{
+                        backgroundColor: 'var(--bg-panel)',
+                        border: `1px solid ${tierColor}`,
+                        padding: '12px',
+                        borderRadius: '2px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '10px',
+                        boxShadow: `0 4px 20px ${isConfirmed ? 'rgba(0, 217, 163, 0.1)' : 'rgba(255, 170, 0, 0.1)'}`
+                      }}
+                    >
+                      {/* Top Comparison Row: Detected Crop vs Watchlist Dossier */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                        {/* Detected Crop */}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                          <div style={{ width: '76px', height: '76px', backgroundColor: '#000', border: '1px solid var(--border-hairline)', overflow: 'hidden', position: 'relative' }}>
+                            <img
+                              src={`http://localhost:8000${m.face_crop_path}`}
+                              alt="CCTV Crop"
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                            />
+                            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.75)', fontSize: '8px', color: '#FFF', textAlign: 'center', fontFamily: "'IBM Plex Mono', monospace" }}>
+                              {m.video_timestamp_sec}s
+                            </div>
+                          </div>
+                          <span style={{ fontSize: '0.62rem', color: '#38bdf8', fontFamily: "'IBM Plex Mono', monospace" }}>
+                            DETECTED CROP
                           </span>
-                          <span style={{
-                            color: isConfirmed ? 'var(--accent-signal)' : 'var(--accent-alert)',
+                        </div>
+
+                        {/* Match Indicator & ANN Metrics */}
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '2px' }}>
+                          <div style={{
+                            backgroundColor: isConfirmed ? 'rgba(0, 217, 163, 0.15)' : 'rgba(255, 170, 0, 0.15)',
+                            border: `1px solid ${tierColor}`,
+                            color: tierColor,
+                            padding: '3px 8px',
+                            borderRadius: '2px',
                             fontFamily: "'IBM Plex Mono', monospace",
                             fontSize: '1rem',
                             fontWeight: 700
                           }}>
-                            {(m.confidence * 100).toFixed(1)}%
+                            {(m.confidence * 100).toFixed(1)}% ANN
+                          </div>
+                          <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                            {m.tier}
+                          </span>
+                          <span style={{ fontSize: '0.62rem', color: '#a855f7', fontFamily: "'IBM Plex Mono', monospace" }}>
+                            HAMMING: {m.hamming_distance || 0} BITS
                           </span>
                         </div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>
-                          ID: {m.person_id} // {m.threat_level || 'HIGH'}
-                        </div>
-                        <div style={{ fontSize: '0.7rem', color: '#38bdf8', fontFamily: "'IBM Plex Mono', monospace" }}>
-                          LSH HASH: {m.query_hash_hex ? `${m.query_hash_hex.slice(0, 16)}...` : '128-BIT LSH'} (HAMMING: {m.hamming_distance || 2})
+
+                        {/* Watchlist Reference Photo */}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                          <div style={{ width: '76px', height: '76px', backgroundColor: '#000', border: `1px solid ${tierColor}`, overflow: 'hidden' }}>
+                            <img
+                              src={`http://localhost:8000${m.reference_photo_path}`}
+                              alt={m.name}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                            />
+                          </div>
+                          <span style={{ fontSize: '0.62rem', color: 'var(--accent-signal)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                            WATCHLIST DB
+                          </span>
                         </div>
                       </div>
 
-                      <button
-                        onClick={() => {
-                          onPinpointMatch(m);
-                          onClose();
-                        }}
-                        style={{
-                          marginTop: '6px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          backgroundColor: 'rgba(0, 217, 163, 0.12)',
-                          color: 'var(--accent-signal)',
-                          border: '1px solid var(--accent-signal)',
-                          padding: '6px',
-                          fontSize: '0.72rem',
-                          fontFamily: "'IBM Plex Mono', monospace",
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <MapPin size={12} />
-                        PINPOINT ON TACTICAL MAP
-                      </button>
+                      {/* Profile Metadata */}
+                      <div style={{ borderTop: '1px solid var(--border-hairline)', paddingTop: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                          <span className="mono-display" style={{ fontSize: '0.92rem', color: 'var(--text-primary)' }}>
+                            {m.name}
+                          </span>
+                          <span style={{
+                            fontSize: '0.65rem',
+                            fontFamily: "'IBM Plex Mono', monospace",
+                            color: m.threat_level === 'CRITICAL' ? 'var(--accent-alert)' : '#f59e0b',
+                            backgroundColor: 'rgba(255, 71, 87, 0.12)',
+                            padding: '1px 5px',
+                            border: '1px solid rgba(255, 71, 87, 0.3)'
+                          }}>
+                            {m.threat_level || 'HIGH THREAT'}
+                          </span>
+                        </div>
+
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace", marginBottom: '4px' }}>
+                          ID: {m.person_id} // {m.offense || 'Active Criminal Warrant'}
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            onPinpointMatch(m);
+                            onClose();
+                          }}
+                          style={{
+                            width: '100%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            backgroundColor: 'rgba(0, 217, 163, 0.12)',
+                            color: 'var(--accent-signal)',
+                            border: '1px solid var(--accent-signal)',
+                            padding: '6px',
+                            fontSize: '0.72rem',
+                            fontFamily: "'IBM Plex Mono', monospace",
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <MapPin size={12} />
+                          PINPOINT SIGHTING ON TACTICAL MAP
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {result && result.matches.length === 0 && (
+                  <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem', fontFamily: "'IBM Plex Mono', monospace", gridColumn: '1 / -1' }}>
+                    No high-confidence watchlist targets identified in this CCTV clip.
+                  </div>
+                )}
+
+                {!result && (
+                  <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem', fontFamily: "'IBM Plex Mono', monospace", gridColumn: '1 / -1' }}>
+                    Click &ldquo;INGEST &amp; SCAN CCTV CLIP&rdquo; to execute multi-face detection, ArcFace LSH hashing, and FAISS similarity matching.
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* All Detected Crops Grid */
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px' }}>
+                {result?.detected_crops?.map((c, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      backgroundColor: 'var(--bg-panel)',
+                      border: '1px solid var(--border-hairline)',
+                      padding: '8px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px'
+                    }}
+                  >
+                    <div style={{ width: '100%', aspectRatio: '1/1', backgroundColor: '#000', overflow: 'hidden' }}>
+                      <img
+                        src={`http://localhost:8000${c.crop_url}`}
+                        alt="Crop"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                      />
+                    </div>
+                    <div style={{ fontSize: '0.7rem', fontFamily: "'IBM Plex Mono', monospace" }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-primary)' }}>
+                        <span>TRK #{c.track_id}</span>
+                        <span>{c.timestamp_sec}s</span>
+                      </div>
+                      <div style={{ color: c.confidence > 0.6 ? 'var(--accent-signal)' : 'var(--text-secondary)', marginTop: '2px' }}>
+                        {c.best_match_name} ({c.confidence > 0 ? `${(c.confidence * 100).toFixed(0)}%` : 'No Match'})
+                      </div>
                     </div>
                   </div>
-                );
-              })}
-
-              {!result && (
-                <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem', fontFamily: "'IBM Plex Mono', monospace", gridColumn: '1 / -1' }}>
-                  Click &ldquo;INGEST &amp; SCAN CCTV CLIP&rdquo; to execute multi-face detection, ArcFace LSH hashing, and FAISS similarity matching.
-                </div>
-              )}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -546,10 +903,23 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
         @keyframes spin {
           100% { transform: rotate(360deg); }
         }
+        @keyframes spinReverse {
+          from { transform: rotate(360deg); }
+          to { transform: rotate(0deg); }
+        }
+        @keyframes scanLaser {
+          0% { top: 0%; opacity: 0.85; }
+          50% { top: 98%; opacity: 1; }
+          100% { top: 0%; opacity: 0.85; }
+        }
+        @keyframes progressIndeterminate {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
         @keyframes pulse {
-          0% { opacity: 1; }
-          50% { opacity: 0.4; }
-          100% { opacity: 1; }
+          0% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.4; transform: scale(0.92); }
+          100% { opacity: 1; transform: scale(1); }
         }
       `}</style>
     </div>

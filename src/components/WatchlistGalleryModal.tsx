@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Plus, Upload, X, Search } from 'lucide-react';
+import { Shield, Plus, Upload, X, Search, RefreshCw } from 'lucide-react';
 import {
-  fetchReferencePersons, enrollReferencePerson,
+  fetchReferencePersons, enrollReferencePerson, syncWatchlist,
   type ReferencePerson
 } from '../services/api';
 
@@ -15,6 +15,7 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
   const [query, setQuery] = useState('');
   const [showEnrollForm, setShowEnrollForm] = useState(false);
   const [isEnrolling, setIsEnrolling] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Form State
   const [name, setName] = useState('');
@@ -25,6 +26,7 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
   const [offense, setOffense] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [enrollError, setEnrollError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -42,33 +44,54 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
     if (file) {
       setSelectedFile(file);
       setPreviewUrl(URL.createObjectURL(file));
+      setEnrollError(null);
     }
   };
 
   const handleEnroll = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedFile || !name || !personId) return;
+    setEnrollError(null);
+
+    const cleanName = name.trim();
+    if (!cleanName) {
+      setEnrollError('Full Name is required');
+      return;
+    }
+
+    const cleanPersonId = personId.trim() || `p-${cleanName.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now().toString().slice(-4)}`;
 
     setIsEnrolling(true);
     const formData = new FormData();
-    formData.append('person_id', personId);
-    formData.append('name', name);
+    formData.append('person_id', cleanPersonId);
+    formData.append('name', cleanName);
     formData.append('age', String(age));
     formData.append('category', category);
     formData.append('threat_level', threatLevel);
-    formData.append('offense', offense || 'Active Felony Warrant');
-    formData.append('file', selectedFile);
+    formData.append('offense', offense || 'Active Criminal Warrant');
+    formData.append('last_seen', 'Surveillance Network');
 
-    const created = await enrollReferencePerson(formData);
-    setIsEnrolling(false);
+    if (selectedFile) {
+      formData.append('file', selectedFile);
+    }
 
-    if (created) {
-      setShowEnrollForm(false);
-      setName('');
-      setPersonId('');
-      setSelectedFile(null);
-      setPreviewUrl(null);
-      loadPersons();
+    try {
+      const created = await enrollReferencePerson(formData);
+      setIsEnrolling(false);
+
+      if (created) {
+        setShowEnrollForm(false);
+        setName('');
+        setPersonId('');
+        setOffense('');
+        setSelectedFile(null);
+        setPreviewUrl(null);
+        await loadPersons();
+      } else {
+        setEnrollError('Failed to save to database. Please check connection and try again.');
+      }
+    } catch (err: any) {
+      setIsEnrolling(false);
+      setEnrollError(err?.message || 'Database enrollment failed');
     }
   };
 
@@ -116,12 +139,38 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
               REFERENCE WATCHLIST & CRIMINAL DOSSIERS
             </h2>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>
-              FAISS VECTOR GALLERY // LSH HASH INDEX // {persons.length} ENROLLED TARGETS
+              FAISS VECTOR GALLERY // DATABASE DOSSIERS // {persons.length} ENROLLED TARGETS
             </div>
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            onClick={async () => {
+              setIsSyncing(true);
+              await syncWatchlist();
+              await loadPersons();
+              setIsSyncing(false);
+            }}
+            disabled={isSyncing}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              backgroundColor: 'rgba(0, 217, 163, 0.12)',
+              color: 'var(--accent-signal)',
+              border: '1px solid var(--accent-signal)',
+              padding: '6px 12px',
+              fontSize: '0.75rem',
+              fontFamily: "'IBM Plex Mono', monospace",
+              fontWeight: 600,
+              cursor: isSyncing ? 'wait' : 'pointer'
+            }}
+          >
+            <RefreshCw size={13} className={isSyncing ? 'spinning' : ''} />
+            {isSyncing ? 'SYNCING DB...' : 'SYNC DB & FAISS'}
+          </button>
+
           <button
             onClick={() => setShowEnrollForm(prev => !prev)}
             style={{
@@ -170,8 +219,22 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
             }}
           >
             <h3 className="mono-display" style={{ fontSize: '0.95rem', marginBottom: '16px', color: 'var(--accent-signal)' }}>
-              ENROLL SUSPECT INTO FAISS & LSH INDEX
+              ENROLL SUSPECT INTO DATABASE & FAISS
             </h3>
+
+            {enrollError && (
+              <div style={{
+                padding: '8px 12px',
+                marginBottom: '14px',
+                backgroundColor: 'rgba(255, 71, 87, 0.15)',
+                border: '1px solid var(--accent-alert)',
+                color: 'var(--accent-alert)',
+                fontSize: '0.78rem',
+                fontFamily: "'IBM Plex Mono', monospace"
+              }}>
+                {enrollError}
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
               {/* Photo upload dropzone */}
@@ -344,7 +407,7 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                 cursor: isEnrolling ? 'wait' : 'pointer'
               }}
             >
-              {isEnrolling ? 'EXTRACTING ARCFACE & INDEXING...' : 'ENROLL & COMPUTE LSH HASH'}
+              {isEnrolling ? 'EXTRACTING EMBEDDING & SAVING TO DATABASE...' : 'ENROLL SUSPECT INTO DATABASE & FAISS'}
             </button>
           </form>
         ) : (
@@ -443,7 +506,7 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                         padding: '4px 6px',
                         border: '1px solid rgba(0, 217, 163, 0.2)'
                       }}>
-                        FAISS HNSW INDEXED // 512-D LSH
+                        FAISS HNSW INDEXED // 64-D EMBEDDING
                       </div>
                     </div>
                   </div>

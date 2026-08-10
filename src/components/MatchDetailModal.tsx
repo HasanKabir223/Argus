@@ -155,7 +155,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                 />
               </div>
               <span style={{ fontSize: '0.62rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>
-                ARCFACE 512D
+                EMBEDDING 64D
               </span>
             </div>
 

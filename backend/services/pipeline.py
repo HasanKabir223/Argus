@@ -39,21 +39,21 @@ class CheckpointPipeline:
         os.makedirs(self.gallery_dir, exist_ok=True)
 
         # 1. Initialize detector & filter
-        self.detector = FaceDetector(det_thresh=0.35)
-        self.quality_filter = QualityFilter(min_size=35, blur_threshold=60.0, det_threshold=0.35)
+        self.detector = FaceDetector(det_thresh=0.30)
+        self.quality_filter = QualityFilter(min_size=16, blur_threshold=15.0, det_threshold=0.30)
 
         # 2. Initialize tracking & deduplication
         self.tracker = BYTETracker(track_thresh=0.4, match_thresh=0.35)
         self.track_cache = TrackCacheManager()
 
         # 3. Initialize embedder & vector index
-        self.embedder = ArcFaceEmbedder(embedding_dim=512, hash_bits=128)
+        self.embedder = ArcFaceEmbedder(embedding_dim=64, hash_bits=64)
         self.search_engine = FaissSimilaritySearch(
-            dimension=512,
+            dimension=64,
             threshold_confirmed=0.75,
             threshold_review=0.60,
             index_type="hnsw",
-            hash_bits=128
+            hash_bits=64
         )
         self.gallery_manager = GalleryManager(
             embedder=self.embedder,

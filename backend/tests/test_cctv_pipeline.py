@@ -98,14 +98,21 @@ def test_cctv_clip_ingestion():
     clips = pipe.cctv_service.get_available_clips()
     print(f"  - Found {len(clips)} configured CCTV surveillance camera clips.")
     
-    if not clips or not clips[0]["exists"]:
-        from backend.scripts.generate_cctv_footages import generate_all_cctv_footages
-        generate_all_cctv_footages()
-        clips = pipe.cctv_service.get_available_clips()
+    if not clips or not any(c.get("exists") for c in clips):
+        raise FileNotFoundError("No valid CCTV surveillance clips found in backend/cctv footages")
     
-    target_clip = clips[0]
-    cctv_dir = os.path.join(os.path.dirname(__file__), "..", "data", "cctv_footages")
-    video_path = os.path.join(cctv_dir, target_clip["filename"])
+    # Pick the first available clip that exists on disk
+    target_clip = next((c for c in clips if c.get("exists")), clips[0])
+    from backend.services.cctv_service import _get_cctv_storage_dirs
+    storage_dirs = _get_cctv_storage_dirs()
+    video_path = None
+    for sdir in storage_dirs:
+        candidate = os.path.join(sdir, target_clip["filename"])
+        if os.path.exists(candidate):
+            video_path = candidate
+            break
+    if not video_path:
+        video_path = os.path.join(storage_dirs[0], target_clip["filename"])
     
     print(f"  - Ingesting {target_clip['filename']} ({target_clip['checkpoint_name']})...")
     t0 = time.time()

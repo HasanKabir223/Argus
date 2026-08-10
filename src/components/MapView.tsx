@@ -9,6 +9,7 @@ interface MapViewProps {
   matches: Match[];
   selectedPersonId: string | null;
   onSelectCheckpoint: (checkpointId: string) => void;
+  onSelectMatch?: (matchId: string) => void;
 }
 
 type MapLayerType = 'dark_hd' | 'satellite_hd' | 'cyber_hd';
@@ -106,6 +107,83 @@ function createCheckpointIcon(status: 'alert' | 'confirmed' | 'idle', name: stri
   });
 }
 
+function createSuspectSightingIcon(match: Match, isSelected: boolean) {
+  const isConfirmed = match.status === 'CONFIRMED';
+  const ringColor = isConfirmed ? '#00D9A3' : '#FF4757';
+  const imgUrl = match.faceCropUrl || match.referencePhotoUrl || 'http://localhost:8000/static/gallery/placeholder.jpg';
+
+  const svgHtml = `
+    <div style="position: relative; width: 64px; height: 64px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+      <!-- Glowing Pulse Radar Ring -->
+      <div style="
+        position: absolute;
+        width: 58px;
+        height: 58px;
+        border-radius: 50%;
+        border: 2px solid ${ringColor};
+        background: ${isConfirmed ? 'rgba(0, 217, 163, 0.2)' : 'rgba(255, 71, 87, 0.25)'};
+        animation: pulse 1.5s infinite;
+        box-sizing: border-box;
+      "></div>
+
+      <!-- Inner Face Mugshot Avatar -->
+      <div style="
+        position: relative;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: 2.5px solid ${ringColor};
+        overflow: hidden;
+        background: #000;
+        box-shadow: 0 0 20px ${ringColor};
+        z-index: 4;
+      ">
+        <img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'" />
+      </div>
+
+      <!-- Tactical Reticle Crosshairs -->
+      <div style="position: absolute; top: -4px; left: 50%; transform: translateX(-50%); width: 2px; height: 8px; background: ${ringColor}; z-index: 5;"></div>
+      <div style="position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%); width: 2px; height: 8px; background: ${ringColor}; z-index: 5;"></div>
+      <div style="position: absolute; left: -4px; top: 50%; transform: translateY(-50%); width: 8px; height: 2px; background: ${ringColor}; z-index: 5;"></div>
+      <div style="position: absolute; right: -4px; top: 50%; transform: translateY(-50%); width: 8px; height: 2px; background: ${ringColor}; z-index: 5;"></div>
+
+      <!-- Suspect Name & Confidence Pill Tag -->
+      <div style="
+        position: absolute;
+        bottom: -22px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(10, 14, 20, 0.95);
+        border: 1px solid ${ringColor};
+        color: #FFFFFF;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 6px;
+        border-radius: 2px;
+        white-space: nowrap;
+        pointer-events: none;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.8);
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        z-index: 6;
+      ">
+        <span>${match.name}</span>
+        <span style="color: ${ringColor};">${Math.round(match.confidence * 100)}%</span>
+      </div>
+    </div>
+  `;
+
+  return L.divIcon({
+    html: svgHtml,
+    className: 'custom-suspect-sighting-pin',
+    iconSize: [64, 64],
+    iconAnchor: [32, 32],
+    popupAnchor: [0, -32]
+  });
+}
+
 /**
  * Controller handling user interactions and zoom stabilization.
  * FIX: Prevents auto out-zooming on polling match events!
@@ -167,7 +245,7 @@ const MapController: React.FC<{
   return null;
 };
 
-export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onSelectCheckpoint }) => {
+export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onSelectCheckpoint, onSelectMatch }) => {
   const center: [number, number] = [40.7306, -73.9352];
   const [activeLayer, setActiveLayer] = useState<MapLayerType>('dark_hd');
   const [showLayerSelector, setShowLayerSelector] = useState(false);
@@ -322,6 +400,64 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
                     <strong style={{ color: cpMatches.length > 0 ? 'var(--accent-signal, #00D9A3)' : 'var(--text-secondary, #8892A0)' }}>
                       {cpMatches.length} LOGGED
                     </strong>
+                  </div>
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
+
+        {/* Glowing Suspect Sighting Markers with Face Avatars & Radar Reticles */}
+        {matches.map((m, idx) => {
+          const cp = CHECKPOINTS.find(c => c.id === m.checkpointId);
+          const isSelected = selectedPersonId === m.personId;
+          const lat = cp?.lat || 40.7527;
+          const lng = cp?.lng || -73.9772;
+          // Offset slightly if multiple sightings at the same checkpoint
+          const offsetLat = lat + ((idx % 3) - 1) * 0.0018;
+          const offsetLng = lng + ((Math.floor(idx / 3) % 3) - 1) * 0.0022;
+
+          const suspectIcon = createSuspectSightingIcon(m, isSelected);
+
+          return (
+            <Marker
+              key={`suspect-${m.id}-${idx}`}
+              position={[offsetLat, offsetLng]}
+              icon={suspectIcon}
+              zIndexOffset={isSelected ? 1000 : 500}
+              eventHandlers={{
+                click: () => {
+                  if (onSelectMatch) onSelectMatch(m.id);
+                  if (onSelectCheckpoint && m.checkpointId) onSelectCheckpoint(m.checkpointId);
+                }
+              }}
+            >
+              <Popup className="tactical-popup">
+                <div style={{
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontSize: '11px',
+                  backgroundColor: 'var(--bg-panel, #12161F)',
+                  color: 'var(--text-primary, #E8ECF1)',
+                  padding: '10px',
+                  border: m.status === 'CONFIRMED' ? '1px solid var(--accent-signal)' : '1px solid var(--accent-alert)',
+                  minWidth: '200px'
+                }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                    <img
+                      src={m.faceCropUrl || m.referencePhotoUrl}
+                      alt={m.name}
+                      style={{ width: '42px', height: '42px', objectFit: 'cover', border: '1px solid #333' }}
+                      onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                    />
+                    <div>
+                      <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{m.name}</div>
+                      <div style={{ fontSize: '10px', color: m.status === 'CONFIRMED' ? 'var(--accent-signal)' : 'var(--accent-alert)' }}>
+                        {m.status} // {Math.round(m.confidence * 100)}%
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
+                    LOCATION: {cp?.name || m.checkpointId}
                   </div>
                 </div>
               </Popup>

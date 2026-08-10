@@ -61,7 +61,7 @@ class FaceDetector:
     - Primary: InsightFace RetinaFace-MobileNet-0.25 (buffalo_s) with real landmarks
     - Fallback: OpenCV Haar Cascade with estimated landmarks
     """
-    def __init__(self, det_thresh: float = 0.35, det_size: Tuple[int, int] = (640, 640)):
+    def __init__(self, det_thresh: float = 0.30, det_size: Tuple[int, int] = (480, 480)):
         self.det_thresh = det_thresh
         self.det_size = det_size
         self._app = None
@@ -192,7 +192,7 @@ class FaceDetector:
         detections = []
         if self._cascade is not None:
             faces = self._cascade.detectMultiScale(
-                gray, scaleFactor=1.1, minNeighbors=4, minSize=(30, 30)
+                gray, scaleFactor=1.08, minNeighbors=3, minSize=(16, 16)
             )
             for (x, y, fw, fh) in faces:
                 bbox = [float(x), float(y), float(x + fw), float(y + fh)]

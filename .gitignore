@@ -24,3 +24,29 @@ dist-ssr
 *.sw?
 __pycache__/
 *.pyc
+
+# Video Clips & CCTV Footages
+backend/cctv_footages/
+backend/WatchList/
+backend/watchlist/
+backend/data/
+
+# Generated Static Face Crops & Galleries
+backend/static/crops/
+backend/static/gallery/
+backend/static/cctv/
+backend/static/watchlist/
+
+# Media Extensions
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+*.jfif
+
+# SQLite Databases & Lock Files
+*.db
+*.db-wal
+*.db-shm
+*.db-journal

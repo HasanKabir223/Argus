@@ -111,10 +111,35 @@ function App() {
     }
   };
 
-  const handlePinpointCctvMatch = (match: CctvMatch) => {
+  const handlePinpointCctvMatch = async (match: CctvMatch) => {
     setViewMode('map');
-    handleSelectPerson(match.person_id);
-    addToast(`Pinpointing ${match.name} at ${match.checkpoint_name}`, 'info');
+    setShowCctvStudio(false);
+
+    // Immediately create tactical match object so map renders it without waiting for poll
+    const matchId = String(match.event_id || `m-cctv-${Date.now()}`);
+    const newMatch: Match = {
+      id: matchId,
+      personId: match.person_id,
+      name: match.name,
+      checkpointId: match.checkpoint_id,
+      confidence: match.confidence,
+      timestamp: new Date(),
+      status: match.tier === 'CONFIRMED' ? 'CONFIRMED' : 'PENDING REVIEW',
+      faceCropUrl: match.face_crop_path ? `http://localhost:8000${match.face_crop_path}` : undefined,
+      referencePhotoUrl: match.reference_photo_path ? `http://localhost:8000${match.reference_photo_path}` : undefined
+    };
+
+    setMatches(prev => {
+      const exists = prev.some(m => m.id === matchId || (m.personId === match.person_id && m.checkpointId === match.checkpoint_id));
+      return exists ? prev : [newMatch, ...prev];
+    });
+
+    setSelectedPersonId(match.person_id);
+    setSelectedMatchId(matchId);
+    addToast(`Target sighted: ${match.name} at ${match.checkpoint_name} (${(match.confidence * 100).toFixed(1)}%)`, 'alert');
+
+    // Sync backend database in background
+    syncBackendEvents();
   };
 
   const handleConfirmMatch = async (matchId: string) => {
@@ -220,7 +245,12 @@ function App() {
       {viewMode === 'globe' ? (
         <GlobeView matches={visibleMatches} selectedPersonId={selectedPersonId} />
       ) : (
-        <MapView matches={visibleMatches} selectedPersonId={selectedPersonId} onSelectCheckpoint={handleSelectCheckpoint} />
+        <MapView
+          matches={visibleMatches}
+          selectedPersonId={selectedPersonId}
+          onSelectCheckpoint={handleSelectCheckpoint}
+          onSelectMatch={setSelectedMatchId}
+        />
       )}
 
       <MatchListPanel

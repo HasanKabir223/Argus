@@ -105,6 +105,7 @@ export interface CctvMatch {
   hamming_distance?: number;
   query_hash_hex?: string;
   threat_level?: string;
+  offense?: string;
 }
 
 export interface CctvProcessResult {
@@ -134,6 +135,18 @@ export interface CctvProcessResult {
   };
   matches_count: number;
   matches: CctvMatch[];
+  detected_crops_count?: number;
+  detected_crops?: Array<{
+    track_id: number;
+    crop_url: string;
+    timestamp_sec: number;
+    bbox: number[];
+    det_score: number;
+    best_match_name: string;
+    best_match_id?: string;
+    confidence: number;
+    status: string;
+  }>;
   sample_annotations: Array<{
     frame_idx: number;
     timestamp_sec: number;
@@ -300,3 +313,17 @@ export async function enrollReferencePerson(formData: FormData): Promise<Referen
     return null;
   }
 }
+
+export async function syncWatchlist(): Promise<{ status: string; total_enrolled: number; faiss_vectors_indexed: number; profiles: ReferencePerson[] } | null> {
+  try {
+    const res = await fetch(`${API_BASE}/watchlist/sync`, {
+      method: "POST"
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.warn("Watchlist sync failed", err);
+    return null;
+  }
+}
+
