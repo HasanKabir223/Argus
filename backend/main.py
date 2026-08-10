@@ -45,10 +45,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static directory for face crops and reference gallery photos
+# Mount static directory for face crops, gallery photos, and CCTV surveillance clips
 static_dir = os.path.join(os.path.dirname(__file__), "static")
+cctv_dir = os.path.join(os.path.dirname(__file__), "data", "cctv_footages")
 os.makedirs(os.path.join(static_dir, "crops"), exist_ok=True)
 os.makedirs(os.path.join(static_dir, "gallery"), exist_ok=True)
+os.makedirs(cctv_dir, exist_ok=True)
+
+app.mount("/static/cctv", StaticFiles(directory=cctv_dir), name="cctv")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # Mount API routes

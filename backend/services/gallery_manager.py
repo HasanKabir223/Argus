@@ -1,6 +1,6 @@
 """
-Reference Persons Gallery Manager
-Maintains missing person profiles, synched embeddings, and reference photos.
+Reference Persons Gallery Manager (Wanted Criminals & Persons of Interest Database)
+Maintains wanted person profiles, criminal records, synched ArcFace embeddings, and mugshots.
 """
 
 import os
@@ -13,7 +13,7 @@ from backend.services.faiss_search import FaissSimilaritySearch
 
 class GalleryManager:
     """
-    Manages the missing persons database and coordinates with the FAISS vector index.
+    Manages the criminal reference database and coordinates with the FAISS vector index.
     """
     def __init__(
         self,
@@ -33,19 +33,24 @@ class GalleryManager:
         name: str,
         photo_bgr: np.ndarray,
         age: Optional[int] = None,
-        last_seen: Optional[str] = None
+        last_seen: Optional[str] = None,
+        category: str = "WANTED CRIMINAL",
+        threat_level: str = "HIGH",
+        offense: str = "Active Felony Warrant",
+        case_id: Optional[str] = None,
+        warrant_status: str = "ACTIVE WARRANT - ARREST ON SIGHT"
     ) -> Dict[str, Any]:
         """
-        Enrolls a new missing person:
-        1. Saves reference photo to static storage
-        2. Extracts 512-D ArcFace embedding
+        Enrolls a wanted criminal / person of interest:
+        1. Saves reference mugshot to static storage
+        2. Extracts 512-D ArcFace embedding using deep model
         3. Adds profile to metadata and FAISS index
         """
         photo_filename = f"{person_id}_{name.replace(' ', '_').lower()}.jpg"
         photo_path = os.path.join(self.gallery_dir, photo_filename)
         cv2.imwrite(photo_path, photo_bgr)
 
-        # Generate embedding from reference photo
+        # Generate real deep embedding from reference photo
         embedding = self.embedder.get_embedding(photo_bgr)
 
         meta = {
@@ -53,8 +58,13 @@ class GalleryManager:
             "name": name,
             "photo_path": photo_path.replace("\\", "/"),
             "photo_url": f"/static/gallery/{photo_filename}",
-            "age": age or 25,
-            "last_seen": last_seen or "Central Terminal"
+            "age": age or 28,
+            "last_seen": last_seen or "Grand Central Terminal",
+            "category": category,
+            "threat_level": threat_level,
+            "offense": offense,
+            "case_id": case_id or f"CR-{person_id.upper()}",
+            "warrant_status": warrant_status
         }
 
         self.persons.append(meta)
@@ -67,35 +77,45 @@ class GalleryManager:
 
     def load_initial_gallery(self, seed_profiles: List[Dict[str, Any]]):
         """
-        Seeds the gallery with standard synthetic/demo profiles.
+        Seeds the gallery with real face photos (e.g. from LFW) labeled with criminal records.
         """
+        self.persons = []
         embeddings_list = []
         metadata_list = []
 
         for p in seed_profiles:
             photo = p.get("image")
+            photo_path = p.get("photo_path")
+
+            if photo is None and photo_path and os.path.exists(photo_path):
+                photo = cv2.imread(photo_path)
+
             if photo is None:
-                # Generate a synthetic distinct portrait for the demo profile
+                # Fallback: create distinct synthetic face if photo not available
                 photo = np.zeros((112, 112, 3), dtype=np.uint8)
                 color = p.get("base_color", (180, 140, 100))
                 cv2.circle(photo, (56, 56), 40, color, -1)
-                # Draw facial features
                 cv2.circle(photo, (42, 48), 5, (40, 40, 40), -1)
                 cv2.circle(photo, (70, 48), 5, (40, 40, 40), -1)
                 cv2.ellipse(photo, (56, 75), (15, 8), 0, 0, 180, (40, 40, 40), 2)
 
             photo_filename = f"{p['person_id']}_{p['name'].replace(' ', '_').lower()}.jpg"
-            photo_path = os.path.join(self.gallery_dir, photo_filename)
-            cv2.imwrite(photo_path, photo)
+            dest_photo_path = os.path.join(self.gallery_dir, photo_filename)
+            cv2.imwrite(dest_photo_path, photo)
 
             embedding = self.embedder.get_embedding(photo)
             meta = {
                 "person_id": p["person_id"],
                 "name": p["name"],
-                "photo_path": photo_path.replace("\\", "/"),
+                "photo_path": dest_photo_path.replace("\\", "/"),
                 "photo_url": f"/static/gallery/{photo_filename}",
-                "age": p.get("age", 22),
-                "last_seen": p.get("last_seen", "Grand Central")
+                "age": p.get("age", 30),
+                "last_seen": p.get("last_seen", "Grand Central Terminal"),
+                "category": p.get("category", "WANTED CRIMINAL"),
+                "threat_level": p.get("threat_level", "HIGH"),
+                "offense": p.get("offense", "Fugitive from Justice / Grand Larceny"),
+                "case_id": p.get("case_id", f"NYPD-2026-{p['person_id'].upper()}"),
+                "warrant_status": p.get("warrant_status", "ACTIVE WARRANT - ARREST ON SIGHT")
             }
 
             self.persons.append(meta)
@@ -105,3 +125,4 @@ class GalleryManager:
         if embeddings_list:
             stacked_embeddings = np.vstack(embeddings_list)
             self.search_engine.set_reference_database(stacked_embeddings, metadata_list)
+            print(f"[GalleryManager] Initialized Criminal Reference Database with {len(self.persons)} profiles in FAISS.")

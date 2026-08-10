@@ -1,6 +1,6 @@
 """
 Event and Checkpoint Storage Service
-Coordinates persistence of sighting events and human review state updates.
+Coordinates persistence of sighting events, criminal records, and human review state updates.
 """
 
 from typing import List, Dict, Any, Optional
@@ -21,10 +21,16 @@ class EventService:
         face_crop_path: Optional[str] = None,
         reference_photo_path: Optional[str] = None,
         match_id: Optional[str] = None,
-        status: str = "PENDING_REVIEW"
+        status: str = "PENDING_REVIEW",
+        source_type: str = "CHECKPOINT_PHOTO",
+        camera_id: str = "CAM-01",
+        video_timestamp_sec: Optional[float] = None,
+        threat_level: str = "HIGH",
+        offense: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Logs a confirmed match sighting into the SQLite audit store.
+        Logs a confirmed or reviewable match sighting into the SQLite audit store.
+        Supports both photo uploads and continuous CCTV video stream matches.
         """
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -35,11 +41,13 @@ class EventService:
         cursor.execute("""
             INSERT INTO match_events
             (match_id, person_id, name, checkpoint_id, checkpoint_name,
-             lat, lng, confidence, face_crop_path, reference_photo_path, timestamp, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             lat, lng, confidence, face_crop_path, reference_photo_path, timestamp, status,
+             source_type, camera_id, video_timestamp_sec, threat_level, offense)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             m_id, person_id, name, checkpoint_id, checkpoint_name,
-            lat, lng, confidence, face_crop_path, reference_photo_path, now_iso, status
+            lat, lng, confidence, face_crop_path, reference_photo_path, now_iso, status,
+            source_type, camera_id, video_timestamp_sec, threat_level, offense
         ))
         
         conn.commit()
@@ -58,7 +66,12 @@ class EventService:
             "face_crop_path": face_crop_path,
             "reference_photo_path": reference_photo_path,
             "timestamp": now_iso,
-            "status": status
+            "status": status,
+            "source_type": source_type,
+            "camera_id": camera_id,
+            "video_timestamp_sec": video_timestamp_sec,
+            "threat_level": threat_level,
+            "offense": offense
         }
 
     @staticmethod
