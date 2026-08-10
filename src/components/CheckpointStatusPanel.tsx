@@ -40,7 +40,7 @@ export const CheckpointStatusPanel: React.FC<CheckpointStatusPanelProps> = ({ ma
       aria-label="Checkpoint status"
       style={{
         position: 'absolute',
-        top: '64px',
+        top: '72px',
         left: '16px',
         width: '300px',
         maxHeight: 'calc(100% - 160px)',

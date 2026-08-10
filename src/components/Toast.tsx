@@ -73,7 +73,7 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
     <div
       style={{
         position: 'absolute',
-        top: '60px',
+        top: '68px',
         left: '50%',
         transform: 'translateX(-50%)',
         display: 'flex',

@@ -4,7 +4,7 @@ import { format } from 'date-fns';
 
 export interface AuditEntry {
   id: string;
-  action: 'CONFIRMED' | 'DISMISSED';
+  action: 'CONFIRMED' | 'DISMISSED' | 'FLAGGED';
   personId: string;
   matchId: string;
   checkpointName: string;
@@ -93,7 +93,7 @@ export const AuditLogPanel: React.FC<AuditLogPanelProps> = ({ entries, onClose }
           entries.slice().reverse().map(e => (
             <div key={e.id} className="panel" style={{ padding: '10px 12px', marginBottom: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
               <div>
-                <span className={`badge ${e.action === 'CONFIRMED' ? 'badge-confirmed' : 'badge-dismissed'}`}>{e.action}</span>
+                <span className={`badge ${e.action === 'CONFIRMED' ? 'badge-confirmed' : e.action === 'FLAGGED' ? 'badge-flagged' : 'badge-dismissed'}`}>{e.action}</span>
                 <div style={{ fontSize: '0.8rem', marginTop: '6px' }}>
                   {e.personId} <span style={{ color: 'var(--text-secondary)' }}>@ {e.checkpointName}</span>
                 </div>

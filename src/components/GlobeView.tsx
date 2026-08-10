@@ -111,8 +111,29 @@ export const GlobeView: React.FC<GlobeViewProps> = ({ matches, selectedPersonId 
     }
   }, [selectedPersonId, personMatches]);
 
+  const hasActiveMatches = matches.length > 0;
+
   return (
     <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: '#0A0E14' }}>
+      {!hasActiveMatches && (
+        <div style={{
+          position: 'absolute',
+          top: '24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 40,
+          padding: '8px 16px',
+          backgroundColor: 'rgba(18, 22, 31, 0.85)',
+          border: '1px solid var(--border-hairline)',
+          color: 'var(--text-secondary)',
+          fontFamily: "'IBM Plex Mono', monospace",
+          fontSize: '0.75rem',
+          textAlign: 'center',
+          pointerEvents: 'none'
+        }}>
+          No active matches. Checkpoints are live and monitoring.
+        </div>
+      )}
       <Globe
         ref={globeEl}
         width={dimensions.width}
