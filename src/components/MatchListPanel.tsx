@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Search } from 'lucide-react';
 import { CHECKPOINTS, type Match } from '../data/mockData';
 import { formatDistanceToNow } from 'date-fns';
+import { getConfidenceColor, getConfidenceLabel } from '../utils/confidence';
 
 interface MatchListPanelProps {
   matches: Match[];
@@ -15,6 +16,40 @@ export const MatchListPanel: React.FC<MatchListPanelProps> = ({ matches, selecte
   const [filter, setFilter] = useState<FilterStatus>('ALL');
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
+
+  // Track which match ids we've already rendered once, so the slide-in
+  // animation (spec 5.5) only plays for cards that are genuinely new.
+  const seenIdsRef = useRef<Set<string>>(new Set());
+  const isFirstRenderRef = useRef(true);
+  const [newIds, setNewIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const incoming = matches.filter(m => !seenIdsRef.current.has(m.id));
+    incoming.forEach(m => seenIdsRef.current.add(m.id));
+
+    // Don't animate the initial batch that's already on screen at mount —
+    // only cards added after that should slide in.
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
+    if (incoming.length === 0) return;
+
+    setNewIds(prev => {
+      const next = new Set(prev);
+      incoming.forEach(m => next.add(m.id));
+      return next;
+    });
+
+    const timer = setTimeout(() => {
+      setNewIds(prev => {
+        const next = new Set(prev);
+        incoming.forEach(m => next.delete(m.id));
+        return next;
+      });
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [matches]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -30,7 +65,12 @@ export const MatchListPanel: React.FC<MatchListPanelProps> = ({ matches, selecte
     return () => window.removeEventListener('keydown', handleKey);
   }, []);
 
-  const sortedMatches = [...matches].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  const sortedMatches = [...matches].sort((a, b) => {
+    const aDismissed = a.status === 'DISMISSED';
+    const bDismissed = b.status === 'DISMISSED';
+    if (aDismissed !== bDismissed) return aDismissed ? 1 : -1; // dismissed sinks to bottom
+    return b.timestamp.getTime() - a.timestamp.getTime();
+  });
 
   const filteredMatches = sortedMatches.filter(match => {
     if (filter !== 'ALL' && match.status !== filter) return false;
@@ -131,7 +171,7 @@ export const MatchListPanel: React.FC<MatchListPanelProps> = ({ matches, selecte
                   onSelectPerson(match.personId);
                 }
               }}
-              className="panel match-card"
+              className={`panel match-card${newIds.has(match.id) ? ' match-card-enter' : ''}`}
               style={{
                 padding: '12px',
                 marginBottom: '8px',
@@ -174,12 +214,25 @@ export const MatchListPanel: React.FC<MatchListPanelProps> = ({ matches, selecte
                     {cp?.name || match.checkpointId}
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{
-                      color: match.confidence >= 0.75 ? 'var(--accent-signal)' : 'var(--accent-alert)',
-                      fontFamily: "'IBM Plex Mono', monospace",
-                      fontSize: '1.1rem'
-                    }}>
-                      {(match.confidence * 100).toFixed(1)}%
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                      <span style={{
+                        color: getConfidenceColor(match.confidence),
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        fontSize: '1.1rem'
+                      }}>
+                        {(match.confidence * 100).toFixed(1)}%
+                      </span>
+                      {getConfidenceLabel(match.confidence) && (
+                        <span style={{
+                          color: 'var(--text-secondary)',
+                          fontFamily: "'IBM Plex Mono', monospace",
+                          fontSize: '0.62rem',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.02em'
+                        }}>
+                          {getConfidenceLabel(match.confidence)}
+                        </span>
+                      )}
                     </div>
                     <span className={`badge ${statusBadgeClass}`}>
                       {match.status}

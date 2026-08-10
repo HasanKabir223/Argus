@@ -67,7 +67,7 @@ export const TimelineStrip: React.FC<TimelineStripProps> = ({ matches, onSelectP
           );
         })}
 
-        <div style={{
+        <div className="timeline-now-pulse" style={{
           position: 'absolute',
           right: 0,
           top: '50%',

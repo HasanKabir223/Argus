@@ -196,9 +196,29 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
   };
 
   const currentLayerConfig = LAYER_CONFIGS[activeLayer];
+  const hasActiveMatches = matches.length > 0;
 
   return (
     <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 1, backgroundColor: '#0A0E14' }}>
+      {!hasActiveMatches && (
+        <div style={{
+          position: 'absolute',
+          top: '24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 40,
+          padding: '8px 16px',
+          backgroundColor: 'rgba(18, 22, 31, 0.85)',
+          border: '1px solid var(--border-hairline)',
+          color: 'var(--text-secondary)',
+          fontFamily: "'IBM Plex Mono', monospace",
+          fontSize: '0.75rem',
+          textAlign: 'center',
+          pointerEvents: 'none'
+        }}>
+          No active matches. Checkpoints are live and monitoring.
+        </div>
+      )}
       <MapContainer
         center={center}
         zoom={12}
@@ -313,7 +333,7 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
       {/* Tactical Map Overlay HUD & Controls */}
       <div style={{
         position: 'absolute',
-        top: '64px',
+        top: '72px',
         left: '16px',
         display: 'flex',
         flexDirection: 'column',

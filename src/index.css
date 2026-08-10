@@ -9,6 +9,7 @@
   --text-secondary: #8892A0;
   --accent-signal: #00D9A3;
   --accent-alert: #FF4757;
+  --accent-amber: #FFB830;
   --accent-muted: #3D4759;
   --panel-w: 360px;
 }
@@ -115,6 +116,16 @@ h1, h2, h3, h4, h5, h6, .mono-display {
   background: rgba(255, 71, 87, 0.12);
   color: var(--accent-alert);
   border: 1px solid rgba(255, 71, 87, 0.35);
+  animation: badge-pending-pulse 1.6s infinite cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+@keyframes badge-pending-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
 }
 
 .badge-confirmed {
@@ -127,6 +138,23 @@ h1, h2, h3, h4, h5, h6, .mono-display {
   background: rgba(136, 146, 160, 0.1);
   color: var(--text-secondary);
   border: 1px solid var(--border-hairline);
+}
+
+.badge-flagged {
+  background: rgba(255, 184, 48, 0.12);
+  color: var(--accent-amber);
+  border: 1px solid rgba(255, 184, 48, 0.35);
+}
+
+.button-amber {
+  background: rgba(255, 184, 48, 0.08);
+  border: 1px solid rgba(255, 184, 48, 0.4);
+  color: var(--accent-amber);
+}
+
+.button-amber:hover {
+  background: rgba(255, 184, 48, 0.18);
+  border-color: var(--accent-amber);
 }
 
 /* Filter tabs */
@@ -318,7 +346,65 @@ input:focus-visible,
   animation: radar-pulse-signal 2.2s infinite cubic-bezier(0.25, 1, 0.5, 1);
 }
 
+@keyframes timeline-now-pulse {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(0, 217, 163, 0.5);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 6px 1px rgba(0, 217, 163, 0.5);
+  }
+}
+
+.timeline-now-pulse {
+  animation: timeline-now-pulse 1.8s infinite ease-in-out;
+}
+
 .custom-tactical-pin {
   background: transparent !important;
   border: none !important;
-}
+}
+
+/* New match card entrance (spec 5.5) */
+@keyframes match-card-slide-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.match-card-enter {
+  animation: match-card-slide-in 150ms ease-out;
+}
+
+@keyframes slide-over-enter {
+  0% {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.slide-over-enter {
+  animation: slide-over-enter 200ms ease-out;
+}
+
+/* Accessibility: respect reduced-motion preference (spec 5.5) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

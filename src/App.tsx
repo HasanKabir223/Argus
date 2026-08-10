@@ -148,11 +148,37 @@ function App() {
     syncBackendEvents();
   };
 
+  const handleFlagMatch = (matchId: string) => {
+    const match = matches.find(m => m.id === matchId);
+    if (match) {
+      const cp = CHECKPOINTS.find(c => c.id === match.checkpointId);
+      setAuditLog(prev => [...prev, {
+        id: `a-${Date.now()}`,
+        action: 'FLAGGED',
+        personId: match.personId,
+        matchId: match.id,
+        checkpointName: cp?.name ?? match.checkpointId,
+        timestamp: new Date(),
+      }]);
+      addToast(`Match ${match.personId} flagged for manual review`, 'info');
+    }
+    setSelectedMatchId(null);
+    setSelectedPersonId(null);
+    // No backend status change — the AI pipeline only recognizes CONFIRMED/DISMISSED
+    // (see CheckList.md §1.6). Flagging is an operator annotation that stays
+    // PENDING REVIEW for a supervisor to look at, not a pipeline decision.
+  };
+
   if (isBooting) {
     return <LoadingScreen />;
   }
 
   const activeMatch = matches.find(m => m.id === selectedMatchId);
+  const activeMatchSightingHistory = activeMatch
+    ? matches
+        .filter(m => m.personId === activeMatch.personId)
+        .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+    : [];
   const pendingCount = matches.filter(m => m.status === 'PENDING REVIEW').length;
 
   return (
@@ -191,19 +217,22 @@ function App() {
 
       {activeMatch && (
         <>
+          {/* Transparent click-catcher only — the globe/map must stay fully
+              visible and interactive behind the slide-over per PRD §5.6. */}
           <div style={{
             position: 'absolute',
             top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: 'rgba(10, 14, 20, 0.65)',
-            backdropFilter: 'blur(3px)',
             zIndex: 150,
           }} onClick={() => { setSelectedMatchId(null); setSelectedPersonId(null); }} />
 
           <MatchDetailModal
             match={activeMatch}
+            sightingHistory={activeMatchSightingHistory}
             onClose={() => { setSelectedMatchId(null); setSelectedPersonId(null); }}
             onConfirm={handleConfirmMatch}
             onDismiss={handleDismissMatch}
+            onFlag={handleFlagMatch}
+            onSelectSighting={(matchId) => setSelectedMatchId(matchId)}
           />
         </>
       )}
