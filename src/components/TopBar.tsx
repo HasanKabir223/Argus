@@ -85,17 +85,9 @@ export const TopBar: React.FC<TopBarProps> = ({
     <div style={{
       display: 'grid',
       gridTemplateColumns: 'auto minmax(0, 1fr) auto',
-      alignItems: 'center',
-<<<<<<< HEAD
-      justifyContent: 'space-between',
-      padding: '0 16px',
-      height: '48px',
+      padding: '0 20px',
+      height: '52px',
       backgroundColor: 'rgba(18, 22, 31, 0.92)',
-=======
-      padding: '0 24px',
-      height: '56px',
-      backgroundColor: 'rgba(18, 22, 31, 0.88)',
->>>>>>> 5285c96d75472d75f8b48a6cbc0cf58af546e5f7
       borderBottom: '1px solid var(--border-hairline)',
       backdropFilter: 'blur(8px)',
       position: 'absolute',
@@ -182,13 +174,13 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       {/* Action Controls & Navigation */}
-<<<<<<< HEAD
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
         {/* Launch CCTV Surveillance Studio */}
         <button
           onClick={onOpenCctvStudio}
           aria-label="Open CCTV surveillance studio"
           title="Open CCTV surveillance studio"
+          className="topbar-btn"
           style={{
             ...iconButtonStyle,
             backgroundColor: 'rgba(0, 217, 163, 0.15)',
@@ -206,26 +198,20 @@ export const TopBar: React.FC<TopBarProps> = ({
           onClick={onOpenWatchlist}
           aria-label="Open watchlist reference database"
           title="Watchlist database"
+          className="topbar-btn"
           style={iconButtonStyle}
         >
           <Shield size={12} />
           WATCHLIST
         </button>
 
-=======
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
->>>>>>> 5285c96d75472d75f8b48a6cbc0cf58af546e5f7
         {/* View Mode Toggle: 3D Globe vs 2D Tactical Map */}
         <button
           onClick={onToggleViewMode}
           aria-label={`Switch to ${viewMode === 'globe' ? '2D Map' : '3D Globe'}`}
           title={`Switch to ${viewMode === 'globe' ? '2D Map' : '3D Globe'}`}
-<<<<<<< HEAD
-          style={iconButtonStyle}
-=======
           className="topbar-btn"
           style={{ ...iconButtonStyle, borderColor: 'var(--accent-signal)', color: 'var(--accent-signal)' }}
->>>>>>> 5285c96d75472d75f8b48a6cbc0cf58af546e5f7
         >
           {viewMode === 'globe' ? <Map size={13} /> : <Globe size={13} />}
           {viewMode === 'globe' ? '2D MAP' : '3D GLOBE'}

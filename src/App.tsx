@@ -27,15 +27,9 @@ function App() {
   const [showCheckpoints, setShowCheckpoints] = useState(false);
   const [showAuditLog, setShowAuditLog] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
-<<<<<<< HEAD
   const [showCctvStudio, setShowCctvStudio] = useState(false);
   const [showWatchlist, setShowWatchlist] = useState(false);
-=======
-  // null = live; a timestamp (ms) = operator has dragged the timeline
-  // playhead back and the globe/map should show state as of that moment
-  // (PRD §5.3 Screen 5: "Drag playhead → globe/map replays up to that point").
   const [replayTime, setReplayTime] = useState<number | null>(null);
->>>>>>> 5285c96d75472d75f8b48a6cbc0cf58af546e5f7
 
   // Boot sequence
   useEffect(() => {
