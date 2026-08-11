@@ -181,6 +181,47 @@ class EventService:
         return dict(row) if row else None
 
     @staticmethod
+    def delete_event(event_id: str) -> bool:
+        """
+        Deletes a single match sighting event from SQLite and in-memory cache.
+        """
+        global _MEM_EVENTS
+        _MEM_EVENTS = [e for e in _MEM_EVENTS if str(e.get("match_id")) != event_id and str(e.get("id")) != event_id]
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM match_events WHERE match_id = ? OR CAST(id AS TEXT) = ?", (event_id, event_id))
+            conn.commit()
+            conn.close()
+            print(f"[EventService] ✓ Deleted match event {event_id} from SQLite database.")
+            return True
+        except Exception as e:
+            print(f"[EventService] Error deleting event {event_id}: {e}")
+            return False
+
+    @staticmethod
+    def clear_all_events() -> bool:
+
+        """
+        Clears all active match sightings from SQLite and in-memory cache,
+        providing a clean slate for manual testing.
+        """
+        global _MEM_EVENTS
+        _MEM_EVENTS = []
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM match_events")
+            conn.commit()
+            conn.close()
+            print("[EventService] ✓ Cleared all match events from SQLite database.")
+            return True
+        except Exception as e:
+            print(f"[EventService] Notice when clearing events: {e}")
+            return True
+
+
+    @staticmethod
     def get_checkpoints() -> List[Dict[str, Any]]:
         try:
             conn = get_db_connection()

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { type Match, CHECKPOINTS } from '../data/mockData';
 import { format } from 'date-fns';
-import { X, CheckCircle, AlertTriangle, Copy, Check, ShieldAlert, Fingerprint, Flag, History } from 'lucide-react';
+import { X, CheckCircle, AlertTriangle, Copy, Check, ShieldAlert, Fingerprint, Flag, History, Trash2 } from 'lucide-react';
 import { getConfidenceColor } from '../utils/confidence';
 import { FaceThumb } from './FaceThumb';
 
@@ -12,8 +12,10 @@ interface MatchDetailModalProps {
   onConfirm: (id: string) => void;
   onDismiss: (id: string) => void;
   onFlag: (id: string) => void;
+  onDeleteMatch?: (id: string) => void;
   onSelectSighting: (matchId: string) => void;
 }
+
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -128,15 +130,44 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
             SURVEILLANCE SIGHTING // ID: {match.id}
           </h2>
         </div>
-        <button
-          ref={closeButtonRef}
-          onClick={onClose}
-          aria-label="Close match details"
-          style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
-        >
-          <X size={20} />
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {onDeleteMatch && (
+            <button
+              onClick={() => {
+                onDeleteMatch(match.id);
+                onClose();
+              }}
+              aria-label="Delete this sighting"
+              title="Purge this sighting event"
+              style={{
+                background: 'rgba(255, 71, 87, 0.1)',
+                border: '1px solid rgba(255, 71, 87, 0.3)',
+                color: 'var(--accent-alert)',
+                cursor: 'pointer',
+                padding: '5px 8px',
+                fontSize: '0.72rem',
+                fontFamily: "'IBM Plex Mono', monospace",
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                borderRadius: '2px'
+              }}
+            >
+              <Trash2 size={13} /> DELETE SIGHTING
+            </button>
+          )}
+
+          <button
+            ref={closeButtonRef}
+            onClick={onClose}
+            aria-label="Close match details"
+            style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }}
+          >
+            <X size={20} />
+          </button>
+        </div>
       </div>
+
 
       <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
         {/* Top: Side-by-Side Face Comparison & Cosine Meter */}
@@ -235,9 +266,10 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
                 CHECKPOINT & CAMERA
               </div>
               <div style={{ fontSize: '0.82rem', color: 'var(--text-primary)' }}>
-                <strong>{cp?.name || match.checkpointId}</strong>
-                {cp && <span style={{ color: 'var(--text-secondary)', marginLeft: '6px' }}>GPS: {cp.lat.toFixed(4)}, {cp.lng.toFixed(4)}</span>}
+                <strong>{cp?.city ? `${cp.city}, ${cp.state} — ` : ''}{cp?.name || match.checkpointId}</strong>
+                {cp && <span style={{ color: 'var(--text-secondary)', marginLeft: '6px' }}>({cp.lat.toFixed(4)}°N, {Math.abs(cp.lng).toFixed(4)}°W)</span>}
               </div>
+
 
               <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace", marginTop: '6px' }}>
                 SIGHTING TIMESTAMP

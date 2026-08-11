@@ -202,6 +202,33 @@ class FaissSimilaritySearch:
 
         return sorted(results, key=lambda x: x["confidence"], reverse=True)
 
+    def remove_reference(self, person_id: str) -> bool:
+        """
+        Removes a reference person from the FAISS vector index and in-memory metadata.
+        Rebuilds index with remaining embeddings.
+        """
+        if not self._metadata:
+            return False
+
+        remaining_indices = [
+            i for i, meta in enumerate(self._metadata)
+            if meta.get("person_id") != person_id
+        ]
+
+        if len(remaining_indices) == len(self._metadata):
+            return False  # Not found
+
+        new_metadata = [self._metadata[i] for i in remaining_indices]
+
+        if self._reference_embeddings is not None and len(remaining_indices) > 0:
+            new_embeddings = self._reference_embeddings[remaining_indices]
+        else:
+            new_embeddings = np.empty((0, self.dimension), dtype=np.float32)
+
+        self.set_reference_database(new_embeddings, new_metadata)
+        return True
+
+
 
     def store_footage_embedding(self, embedding: np.ndarray, meta: Dict[str, Any]) -> int:
         """

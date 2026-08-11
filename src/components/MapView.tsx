@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { CHECKPOINTS, type Match } from '../data/mockData';
 import 'leaflet/dist/leaflet.css';
-import { Crosshair, Layers, Navigation } from 'lucide-react';
+import { Crosshair, Layers, Navigation, ShieldAlert, Sparkles, UserCheck, Globe, MapPin } from 'lucide-react';
 
 interface MapViewProps {
   matches: Match[];
@@ -34,10 +34,24 @@ const LAYER_CONFIGS: Record<MapLayerType, { name: string; url: string; attributi
   }
 };
 
+interface DispersedSighting {
+  match: Match;
+  originalLat: number;
+  originalLng: number;
+  dispersedLat: number;
+  dispersedLng: number;
+  checkpointName: string;
+  checkpointCity: string;
+  checkpointState: string;
+  checkpointId: string;
+  isTrajectoryNode?: boolean;
+  orderIndex?: number;
+}
+
 /**
  * Creates custom high-definition SVG Leaflet icons with pulsing radar rings
  */
-function createCheckpointIcon(status: 'alert' | 'confirmed' | 'idle', name: string) {
+function createCheckpointIcon(status: 'alert' | 'confirmed' | 'idle', name: string, city: string, state: string, activeCount: number) {
   let primaryColor = '#3D4759'; // --accent-muted
   let pulseClass = '';
   let glowFilter = '';
@@ -53,15 +67,15 @@ function createCheckpointIcon(status: 'alert' | 'confirmed' | 'idle', name: stri
   }
 
   const svgHtml = `
-    <div style="position: relative; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+    <div style="position: relative; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
       <!-- Outer Concentric Radar Ring -->
       <div class="${pulseClass}" style="
         position: absolute;
-        width: 32px;
-        height: 32px;
+        width: 36px;
+        height: 36px;
         border-radius: 50%;
         border: 1.5px solid ${primaryColor};
-        background: rgba(18, 22, 31, 0.6);
+        background: rgba(18, 22, 31, 0.65);
         box-sizing: border-box;
       "></div>
       
@@ -78,22 +92,29 @@ function createCheckpointIcon(status: 'alert' | 'confirmed' | 'idle', name: stri
       <!-- Checkpoint Label -->
       <div style="
         position: absolute;
-        top: 32px;
+        top: 34px;
         left: 50%;
         transform: translateX(-50%);
-        background: rgba(10, 14, 20, 0.88);
+        background: rgba(10, 14, 20, 0.94);
         border: 1px solid var(--border-hairline, #262D3A);
         color: #E8ECF1;
         font-family: 'IBM Plex Mono', monospace;
         font-size: 10px;
-        padding: 2px 6px;
+        font-weight: 600;
+        padding: 2px 7px;
         border-radius: 2px;
         white-space: nowrap;
         pointer-events: none;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+        box-shadow: 0 4px 14px rgba(0,0,0,0.85);
         letter-spacing: 0.02em;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        z-index: 10;
       ">
-        ${name}
+        <span style="color: var(--accent-signal); font-weight: 700;">${city || state}:</span>
+        <span>${name}</span>
+        ${activeCount > 0 ? `<span style="color: ${primaryColor}; font-weight: 800;">[${activeCount}]</span>` : ''}
       </div>
     </div>
   `;
@@ -101,16 +122,20 @@ function createCheckpointIcon(status: 'alert' | 'confirmed' | 'idle', name: stri
   return L.divIcon({
     html: svgHtml,
     className: 'custom-tactical-pin',
-    iconSize: [36, 36],
-    iconAnchor: [18, 18],
-    popupAnchor: [0, -18]
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+    popupAnchor: [0, -20]
   });
 }
 
-function createSuspectSightingIcon(match: Match, isSelected: boolean) {
+function createSuspectSightingIcon(match: Match, isSelected: boolean, orderIndex?: number, isTrajectory?: boolean) {
   const isConfirmed = match.status === 'CONFIRMED';
   const ringColor = isConfirmed ? '#00D9A3' : '#FF4757';
   const imgUrl = match.faceCropUrl || match.referencePhotoUrl || 'http://localhost:8000/static/gallery/placeholder.jpg';
+
+  const orderBadge = isTrajectory && orderIndex !== undefined
+    ? `<div style="position: absolute; top: -6px; right: -6px; background: ${ringColor}; color: #0A0E14; font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 10px; z-index: 10; box-shadow: 0 0 6px rgba(0,0,0,0.8);">#${orderIndex + 1}</div>`
+    : '';
 
   const svgHtml = `
     <div style="position: relative; width: 64px; height: 64px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
@@ -121,31 +146,33 @@ function createSuspectSightingIcon(match: Match, isSelected: boolean) {
         height: 58px;
         border-radius: 50%;
         border: 2px solid ${ringColor};
-        background: ${isConfirmed ? 'rgba(0, 217, 163, 0.2)' : 'rgba(255, 71, 87, 0.25)'};
-        animation: pulse 1.5s infinite;
+        background: ${isConfirmed ? 'rgba(0, 217, 163, 0.22)' : 'rgba(255, 71, 87, 0.25)'};
+        animation: pulse 1.6s infinite;
         box-sizing: border-box;
       "></div>
 
       <!-- Inner Face Mugshot Avatar -->
       <div style="
         position: relative;
-        width: 44px;
-        height: 44px;
+        width: 46px;
+        height: 46px;
         border-radius: 50%;
-        border: 2.5px solid ${ringColor};
+        border: 2px solid ${ringColor};
         overflow: hidden;
-        background: #000;
-        box-shadow: 0 0 20px ${ringColor};
+        background: #06090E;
+        box-shadow: 0 0 18px ${ringColor}90;
         z-index: 4;
       ">
         <img src="${imgUrl}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'" />
       </div>
 
+      ${orderBadge}
+
       <!-- Tactical Reticle Crosshairs -->
-      <div style="position: absolute; top: -4px; left: 50%; transform: translateX(-50%); width: 2px; height: 8px; background: ${ringColor}; z-index: 5;"></div>
-      <div style="position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%); width: 2px; height: 8px; background: ${ringColor}; z-index: 5;"></div>
-      <div style="position: absolute; left: -4px; top: 50%; transform: translateY(-50%); width: 8px; height: 2px; background: ${ringColor}; z-index: 5;"></div>
-      <div style="position: absolute; right: -4px; top: 50%; transform: translateY(-50%); width: 8px; height: 2px; background: ${ringColor}; z-index: 5;"></div>
+      <div style="position: absolute; top: -3px; left: 50%; transform: translateX(-50%); width: 2px; height: 7px; background: ${ringColor}; z-index: 5;"></div>
+      <div style="position: absolute; bottom: -3px; left: 50%; transform: translateX(-50%); width: 2px; height: 7px; background: ${ringColor}; z-index: 5;"></div>
+      <div style="position: absolute; left: -3px; top: 50%; transform: translateY(-50%); width: 7px; height: 2px; background: ${ringColor}; z-index: 5;"></div>
+      <div style="position: absolute; right: -3px; top: 50%; transform: translateY(-50%); width: 7px; height: 2px; background: ${ringColor}; z-index: 5;"></div>
 
       <!-- Suspect Name & Confidence Pill Tag -->
       <div style="
@@ -153,24 +180,24 @@ function createSuspectSightingIcon(match: Match, isSelected: boolean) {
         bottom: -22px;
         left: 50%;
         transform: translateX(-50%);
-        background: rgba(10, 14, 20, 0.95);
+        background: rgba(10, 14, 20, 0.96);
         border: 1px solid ${ringColor};
         color: #FFFFFF;
         font-family: 'IBM Plex Mono', monospace;
         font-size: 10px;
         font-weight: 700;
-        padding: 2px 6px;
+        padding: 2px 7px;
         border-radius: 2px;
         white-space: nowrap;
         pointer-events: none;
-        box-shadow: 0 4px 14px rgba(0,0,0,0.8);
+        box-shadow: 0 4px 14px rgba(0,0,0,0.9);
         display: flex;
         align-items: center;
-        gap: 4px;
+        gap: 5px;
         z-index: 6;
       ">
         <span>${match.name}</span>
-        <span style="color: ${ringColor};">${Math.round(match.confidence * 100)}%</span>
+        <span style="color: ${ringColor}; font-weight: 800;">${Math.round(match.confidence * 100)}%</span>
       </div>
     </div>
   `;
@@ -185,8 +212,7 @@ function createSuspectSightingIcon(match: Match, isSelected: boolean) {
 }
 
 /**
- * Controller handling user interactions and zoom stabilization.
- * FIX: Prevents auto out-zooming on polling match events!
+ * Controller handling user interactions and USA nationwide bounds fit.
  */
 const MapController: React.FC<{
   selectedPersonId: string | null;
@@ -197,20 +223,22 @@ const MapController: React.FC<{
   const prevSelectedPersonRef = useRef<string | null>(null);
   const isInitialFitDone = useRef(false);
 
-  // Initial bounds fit on mount only once
+  // Initial bounds fit on mount to show the entire USA nationwide network
   useEffect(() => {
     const timer = setTimeout(() => {
       map.invalidateSize();
       if (!isInitialFitDone.current) {
-        const bounds = CHECKPOINTS.map(cp => [cp.lat, cp.lng]) as [number, number][];
-        map.fitBounds(bounds, { padding: [90, 90], maxZoom: 13, animate: false });
+        // Continental US Bounds (NYC to LA, Seattle to Miami)
+        const continentalBounds = CHECKPOINTS
+          .filter(cp => cp.state !== 'HI') // Exclude Hawaii for initial tight continental framing
+          .map(cp => [cp.lat, cp.lng]) as [number, number][];
+        map.fitBounds(continentalBounds, { padding: [60, 60], maxZoom: 5.5, animate: false });
         isInitialFitDone.current = true;
       }
     }, 150);
     return () => clearTimeout(timer);
   }, [map]);
 
-  // Track map cursor and zoom level for HD tactical HUD
   useMapEvents({
     mousemove(e) {
       onCoordsChange(e.latlng.lat, e.latlng.lng, map.getZoom());
@@ -221,10 +249,10 @@ const MapController: React.FC<{
     }
   });
 
-  // ONLY fly when selectedPersonId changes! Do NOT fly on every matches update!
+  // Track selected person trajectory
   useEffect(() => {
     if (prevSelectedPersonRef.current === selectedPersonId) {
-      return; // Person did not change, ignore background match polling!
+      return;
     }
     prevSelectedPersonRef.current = selectedPersonId;
 
@@ -234,9 +262,19 @@ const MapController: React.FC<{
         .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
       
       if (personMatches.length > 0) {
+        if (personMatches.length > 1) {
+          const personCps = personMatches
+            .map(m => CHECKPOINTS.find(c => c.id === m.checkpointId))
+            .filter(Boolean)
+            .map(cp => [cp!.lat, cp!.lng]) as [number, number][];
+          if (personCps.length > 1) {
+            map.flyToBounds(personCps, { padding: [80, 80], duration: 1.4 });
+            return;
+          }
+        }
         const lastCp = CHECKPOINTS.find(c => c.id === personMatches[personMatches.length - 1].checkpointId);
         if (lastCp) {
-          map.flyTo([lastCp.lat, lastCp.lng], 14, { duration: 1.2, easeLinearity: 0.25 });
+          map.flyTo([lastCp.lat, lastCp.lng], 9, { duration: 1.2, easeLinearity: 0.25 });
         }
       }
     }
@@ -246,30 +284,122 @@ const MapController: React.FC<{
 };
 
 export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onSelectCheckpoint, onSelectMatch }) => {
-  const center: [number, number] = [40.7306, -73.9352];
+  // Center of the United States
+  const usCenter: [number, number] = [38.8283, -98.5795];
   const [activeLayer, setActiveLayer] = useState<MapLayerType>('dark_hd');
   const [showLayerSelector, setShowLayerSelector] = useState(false);
+  const [dispersionMode, setDispersionMode] = useState<'orbital' | 'wide'>('orbital');
   const [hudCoords, setHudCoords] = useState<{ lat: number; lng: number; zoom: number }>({
-    lat: 40.7527,
-    lng: -73.9772,
-    zoom: 12
+    lat: 38.8283,
+    lng: -98.5795,
+    zoom: 4.5
   });
 
   const mapInstanceRef = useRef<L.Map | null>(null);
 
-  const personMatches = selectedPersonId
-    ? matches.filter(m => m.personId === selectedPersonId).sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
-    : [];
+  /**
+   * ─── USA Nationwide Radial Dispersion & Sighting Deduplication Engine ────
+   * Scales radius proportionally for nationwide map zoom vs local zoom.
+   */
+  const dispersedSightings = useMemo<DispersedSighting[]>(() => {
+    let targetMatches: Match[] = [];
 
-  const pathPositions: [number, number][] = personMatches
-    .map(m => CHECKPOINTS.find(c => c.id === m.checkpointId))
-    .filter((cp): cp is typeof CHECKPOINTS[number] => Boolean(cp))
-    .map(cp => [cp.lat, cp.lng]);
+    if (selectedPersonId) {
+      // Show full chronological nationwide trajectory for selected suspect
+      targetMatches = matches
+        .filter(m => m.personId === selectedPersonId)
+        .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+    } else {
+      // Global USA View: 1 latest verified sighting per unique suspect across all US hubs
+      const latestPerPerson = new Map<string, Match>();
+      const sorted = [...matches].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+      for (const m of sorted) {
+        if (!latestPerPerson.has(m.personId)) {
+          latestPerPerson.set(m.personId, m);
+        }
+      }
+      targetMatches = Array.from(latestPerPerson.values());
+    }
+
+    // Group target matches by checkpoint ID
+    const byCheckpoint = new Map<string, Match[]>();
+    for (const m of targetMatches) {
+      const cpId = m.checkpointId || 'cp-01';
+      if (!byCheckpoint.has(cpId)) byCheckpoint.set(cpId, []);
+      byCheckpoint.get(cpId)!.push(m);
+    }
+
+    const dispersedList: DispersedSighting[] = [];
+    const radiusMultiplier = dispersionMode === 'wide' ? 1.6 : 1.0;
+
+    byCheckpoint.forEach((cpMatches, cpId) => {
+      const cp = CHECKPOINTS.find(c => c.id === cpId) || CHECKPOINTS[0];
+      const count = cpMatches.length;
+
+      if (count === 1) {
+        // Single suspect: clean offset North-East of metropolitan hub
+        const singleOffsetLat = 0.45 * radiusMultiplier;
+        const singleOffsetLng = 0.65 * radiusMultiplier;
+        dispersedList.push({
+          match: cpMatches[0],
+          originalLat: cp.lat,
+          originalLng: cp.lng,
+          dispersedLat: cp.lat + singleOffsetLat,
+          dispersedLng: cp.lng + singleOffsetLng,
+          checkpointName: cp.name,
+          checkpointCity: cp.city,
+          checkpointState: cp.state,
+          checkpointId: cp.id,
+          isTrajectoryNode: Boolean(selectedPersonId),
+          orderIndex: 0
+        });
+      } else {
+        // Multiple suspects: Nationwide Orbital Golden Compass
+        const baseRadius = 0.85 * radiusMultiplier; // ~85km nationwide offset radius
+        
+        cpMatches.forEach((m, idx) => {
+          const ring = Math.floor(idx / 6);
+          const ringIdx = idx % 6;
+          const ringTotal = Math.min(count - ring * 6, 6);
+          const radius = baseRadius + ring * (0.6 * radiusMultiplier);
+
+          // Angle around perimeter, staggered across rings to maximize separation
+          const angle = ((2 * Math.PI * ringIdx) / ringTotal) + (ring * (Math.PI / 6)) + (Math.PI / 4);
+
+          const latOffset = radius * Math.sin(angle);
+          const lngOffset = (radius * Math.cos(angle)) / 0.82; // Longitude aspect ratio correction
+
+          dispersedList.push({
+            match: m,
+            originalLat: cp.lat,
+            originalLng: cp.lng,
+            dispersedLat: cp.lat + latOffset,
+            dispersedLng: cp.lng + lngOffset,
+            checkpointName: cp.name,
+            checkpointCity: cp.city,
+            checkpointState: cp.state,
+            checkpointId: cp.id,
+            isTrajectoryNode: Boolean(selectedPersonId),
+            orderIndex: idx
+          });
+        });
+      }
+    });
+
+    return dispersedList;
+  }, [matches, selectedPersonId, dispersionMode]);
+
+  const pathPositions: [number, number][] = useMemo(() => {
+    if (!selectedPersonId) return [];
+    return dispersedSightings.map(s => [s.dispersedLat, s.dispersedLng]);
+  }, [dispersedSightings, selectedPersonId]);
 
   const handleResetOverview = () => {
     if (mapInstanceRef.current) {
-      const bounds = CHECKPOINTS.map(cp => [cp.lat, cp.lng]) as [number, number][];
-      mapInstanceRef.current.flyToBounds(bounds, { padding: [80, 80], duration: 1.0 });
+      const continentalBounds = CHECKPOINTS
+        .filter(cp => cp.state !== 'HI')
+        .map(cp => [cp.lat, cp.lng]) as [number, number][];
+      mapInstanceRef.current.flyToBounds(continentalBounds, { padding: [60, 60], duration: 1.2 });
     }
   };
 
@@ -294,13 +424,14 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
           textAlign: 'center',
           pointerEvents: 'none'
         }}>
-          No active matches. Checkpoints are live and monitoring.
+          USA Homeland Surveillance Grid Live. 15 Strategic Hubs Monitoring.
         </div>
       )}
+
       <MapContainer
-        center={center}
-        zoom={12}
-        minZoom={4}
+        center={usCenter}
+        zoom={4.5}
+        minZoom={3}
         maxZoom={18}
         zoomSnap={0.5}
         zoomDelta={0.5}
@@ -310,7 +441,7 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
         zoomControl={false}
         attributionControl={true}
       >
-        {/* High-Definition Tile Layer with Retina Support */}
+        {/* High-Definition Tile Layer */}
         <TileLayer
           key={activeLayer}
           url={currentLayerConfig.url}
@@ -318,7 +449,7 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
           subdomains={currentLayerConfig.subdomains || []}
           maxZoom={19}
           maxNativeZoom={18}
-          keepBuffer={6}
+          keepBuffer={8}
           updateWhenIdle={false}
           updateWhenZooming={false}
           className="hd-crisp-tile"
@@ -330,7 +461,25 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
           onCoordsChange={(lat, lng, zoom) => setHudCoords({ lat, lng, zoom })}
         />
 
-        {/* Animated Sightings Polyline Trail */}
+        {/* Tactical Tracer Anchor Lines connecting each suspect to their parent Checkpoint Hub */}
+        {dispersedSightings.map((s, idx) => {
+          const isConfirmed = s.match.status === 'CONFIRMED';
+          const lineColor = isConfirmed ? '#00D9A3' : '#FF4757';
+          return (
+            <Polyline
+              key={`anchor-line-${s.match.id}-${idx}`}
+              positions={[[s.originalLat, s.originalLng], [s.dispersedLat, s.dispersedLng]]}
+              pathOptions={{
+                color: lineColor,
+                weight: 1.5,
+                dashArray: '4, 6',
+                opacity: 0.6
+              }}
+            />
+          );
+        })}
+
+        {/* Animated Flight Path / Trajectory Polyline Trail across USA states when a suspect is selected */}
         {pathPositions.length > 1 && (
           <>
             {/* Outer Glow Trail */}
@@ -358,7 +507,7 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
           </>
         )}
 
-        {/* High-Definition Checkpoint Markers with Radar Rings */}
+        {/* High-Definition Checkpoint Markers Across All 15 USA Strategic Hubs */}
         {CHECKPOINTS.map(cp => {
           const cpMatches = matches.filter(m => m.checkpointId === cp.id);
           const hasRecentAlert = cpMatches.some(m => m.status === 'PENDING REVIEW');
@@ -368,7 +517,7 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
           if (hasRecentAlert) status = 'alert';
           else if (hasConfirmed) status = 'confirmed';
 
-          const icon = createCheckpointIcon(status, cp.name);
+          const icon = createCheckpointIcon(status, cp.name, cp.city, cp.state, cpMatches.length);
 
           return (
             <Marker
@@ -385,18 +534,21 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
                   fontSize: '11px',
                   backgroundColor: 'var(--bg-panel, #12161F)',
                   color: 'var(--text-primary, #E8ECF1)',
-                  padding: '8px 10px',
+                  padding: '10px 12px',
                   border: '1px solid var(--border-hairline, #262D3A)',
-                  minWidth: '180px'
+                  minWidth: '200px'
                 }}>
-                  <div style={{ fontWeight: 600, color: 'var(--accent-signal, #00D9A3)', marginBottom: '4px' }}>
+                  <div style={{ fontWeight: 700, color: 'var(--accent-signal, #00D9A3)', marginBottom: '2px' }}>
+                    {cp.city}, {cp.state}
+                  </div>
+                  <div style={{ color: 'var(--text-primary)', fontSize: '11px', marginBottom: '6px' }}>
                     {cp.name}
                   </div>
                   <div style={{ color: 'var(--text-secondary, #8892A0)', fontSize: '10px', marginBottom: '6px' }}>
                     COORD: {cp.lat.toFixed(4)}°N, {Math.abs(cp.lng).toFixed(4)}°W
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>MATCHES:</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px', borderTop: '1px solid #222' }}>
+                    <span>HOMELAND DETECTIONS:</span>
                     <strong style={{ color: cpMatches.length > 0 ? 'var(--accent-signal, #00D9A3)' : 'var(--text-secondary, #8892A0)' }}>
                       {cpMatches.length} LOGGED
                     </strong>
@@ -407,28 +559,21 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
           );
         })}
 
-        {/* Glowing Suspect Sighting Markers with Face Avatars & Radar Reticles */}
-        {matches.map((m, idx) => {
-          const cp = CHECKPOINTS.find(c => c.id === m.checkpointId);
-          const isSelected = selectedPersonId === m.personId;
-          const lat = cp?.lat || 40.7527;
-          const lng = cp?.lng || -73.9772;
-          // Offset slightly if multiple sightings at the same checkpoint
-          const offsetLat = lat + ((idx % 3) - 1) * 0.0018;
-          const offsetLng = lng + ((Math.floor(idx / 3) % 3) - 1) * 0.0022;
-
-          const suspectIcon = createSuspectSightingIcon(m, isSelected);
+        {/* Radially Dispersed Suspect Sighting Markers Across Nationwide USA Hubs */}
+        {dispersedSightings.map((s, idx) => {
+          const isSelected = selectedPersonId === s.match.personId;
+          const suspectIcon = createSuspectSightingIcon(s.match, isSelected, s.orderIndex, s.isTrajectoryNode);
 
           return (
             <Marker
-              key={`suspect-${m.id}-${idx}`}
-              position={[offsetLat, offsetLng]}
+              key={`dispersed-suspect-${s.match.id}-${idx}`}
+              position={[s.dispersedLat, s.dispersedLng]}
               icon={suspectIcon}
               zIndexOffset={isSelected ? 1000 : 500}
               eventHandlers={{
                 click: () => {
-                  if (onSelectMatch) onSelectMatch(m.id);
-                  if (onSelectCheckpoint && m.checkpointId) onSelectCheckpoint(m.checkpointId);
+                  if (onSelectMatch) onSelectMatch(s.match.id);
+                  if (onSelectCheckpoint && s.checkpointId) onSelectCheckpoint(s.checkpointId);
                 }
               }}
             >
@@ -439,25 +584,28 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
                   backgroundColor: 'var(--bg-panel, #12161F)',
                   color: 'var(--text-primary, #E8ECF1)',
                   padding: '10px',
-                  border: m.status === 'CONFIRMED' ? '1px solid var(--accent-signal)' : '1px solid var(--accent-alert)',
-                  minWidth: '200px'
+                  border: s.match.status === 'CONFIRMED' ? '1px solid var(--accent-signal)' : '1px solid var(--accent-alert)',
+                  minWidth: '220px'
                 }}>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
                     <img
-                      src={m.faceCropUrl || m.referencePhotoUrl}
-                      alt={m.name}
-                      style={{ width: '42px', height: '42px', objectFit: 'cover', border: '1px solid #333' }}
+                      src={s.match.faceCropUrl || s.match.referencePhotoUrl}
+                      alt={s.match.name}
+                      style={{ width: '44px', height: '44px', objectFit: 'cover', border: '1px solid #333' }}
                       onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
                     />
                     <div>
-                      <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{m.name}</div>
-                      <div style={{ fontSize: '10px', color: m.status === 'CONFIRMED' ? 'var(--accent-signal)' : 'var(--accent-alert)' }}>
-                        {m.status} // {Math.round(m.confidence * 100)}%
+                      <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{s.match.name}</div>
+                      <div style={{ fontSize: '10px', color: s.match.status === 'CONFIRMED' ? 'var(--accent-signal)' : 'var(--accent-alert)' }}>
+                        {s.match.status} // {Math.round(s.match.confidence * 100)}%
                       </div>
                     </div>
                   </div>
                   <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
-                    LOCATION: {cp?.name || m.checkpointId}
+                    METROPOLITAN SECTOR: <span style={{ color: 'var(--text-primary)' }}>{s.checkpointCity}, {s.checkpointState}</span>
+                  </div>
+                  <div style={{ fontSize: '9px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                    FACILITY: {s.checkpointName}
                   </div>
                 </div>
               </Popup>
@@ -485,7 +633,7 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              backgroundColor: 'rgba(18, 22, 31, 0.9)',
+              backgroundColor: 'rgba(18, 22, 31, 0.92)',
               backdropFilter: 'blur(6px)',
               padding: '6px 12px',
               fontSize: '0.72rem',
@@ -535,7 +683,29 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
           )}
         </div>
 
-        {/* Reset Overview Camera Button */}
+        {/* Dispersion Mode Toggle */}
+        <button
+          onClick={() => setDispersionMode(prev => prev === 'orbital' ? 'wide' : 'orbital')}
+          className="button"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            backgroundColor: 'rgba(18, 22, 31, 0.92)',
+            backdropFilter: 'blur(6px)',
+            padding: '6px 12px',
+            fontSize: '0.72rem',
+            fontFamily: "'IBM Plex Mono', monospace",
+            color: dispersionMode === 'wide' ? 'var(--accent-signal)' : 'var(--text-primary)',
+            border: `1px solid ${dispersionMode === 'wide' ? 'var(--accent-signal)' : 'var(--border-hairline)'}`
+          }}
+          title="Toggle Wide Regional Radial Dispersion"
+        >
+          <Sparkles size={13} color="var(--accent-signal)" />
+          <span>RADIAL SPREAD: {dispersionMode.toUpperCase()}</span>
+        </button>
+
+        {/* Reset Overview Camera Button to Continental USA */}
         <button
           onClick={handleResetOverview}
           className="button"
@@ -543,50 +713,58 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            backgroundColor: 'rgba(18, 22, 31, 0.9)',
+            backgroundColor: 'rgba(18, 22, 31, 0.92)',
             backdropFilter: 'blur(6px)',
             padding: '6px 12px',
             fontSize: '0.72rem',
             fontFamily: "'IBM Plex Mono', monospace"
           }}
-          title="Reset tactical overview bounds"
         >
-          <Crosshair size={13} color="var(--accent-signal)" />
-          <span>RE-CENTER OVERVIEW</span>
+          <Globe size={13} color="var(--accent-signal)" />
+          <span>CONTINENTAL USA OVERVIEW</span>
         </button>
+
+        {/* Selected Suspect Trajectory Mode Active Pill */}
+        {selectedPersonId && (
+          <div style={{
+            backgroundColor: 'rgba(0, 217, 163, 0.15)',
+            border: '1px solid var(--accent-signal)',
+            color: 'var(--accent-signal)',
+            padding: '6px 10px',
+            fontSize: '0.7rem',
+            fontFamily: "'IBM Plex Mono', monospace",
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            <UserCheck size={13} />
+            <span>INTERSTATE TRAJECTORY // {dispersedSightings.length} SIGHTINGS</span>
+          </div>
+        )}
       </div>
 
-      {/* High-Definition Telemetry & Optical Coordinates Overlay (Bottom-Left) */}
+      {/* Real-Time Tactical Coordinates & Telemetry HUD */}
       <div style={{
         position: 'absolute',
         bottom: '80px',
         left: '16px',
-        backgroundColor: 'rgba(10, 14, 20, 0.88)',
+        zIndex: 50,
+        backgroundColor: 'rgba(10, 14, 20, 0.90)',
         border: '1px solid var(--border-hairline)',
-        padding: '6px 12px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '16px',
+        padding: '6px 14px',
         fontFamily: "'IBM Plex Mono', monospace",
-        fontSize: '0.72rem',
+        fontSize: '0.68rem',
         color: 'var(--text-secondary)',
         backdropFilter: 'blur(6px)',
-        zIndex: 50,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.6)'
+        display: 'flex',
+        gap: '16px',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.6)'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-signal)' }}>
-          <Navigation size={12} />
-          <span>HD RETINA 60FPS</span>
-        </div>
-        <div>
-          LAT: <strong style={{ color: 'var(--text-primary)' }}>{hudCoords.lat.toFixed(4)}° N</strong>
-        </div>
-        <div>
-          LNG: <strong style={{ color: 'var(--text-primary)' }}>{Math.abs(hudCoords.lng).toFixed(4)}° W</strong>
-        </div>
-        <div>
-          TACTICAL ZOOM: <strong style={{ color: 'var(--text-primary)' }}>{hudCoords.zoom.toFixed(1)}x</strong>
-        </div>
+        <div>SECTOR: <span style={{ color: 'var(--accent-signal)' }}>UNITED STATES (HOMELAND)</span></div>
+        <div>LAT: <span style={{ color: 'var(--accent-signal)' }}>{hudCoords.lat.toFixed(4)}°N</span></div>
+        <div>LNG: <span style={{ color: 'var(--accent-signal)' }}>{Math.abs(hudCoords.lng).toFixed(4)}°W</span></div>
+        <div>OPTICAL ZOOM: <span style={{ color: 'var(--accent-signal)' }}>{hudCoords.zoom.toFixed(1)}x</span></div>
+        <div>ACTIVE HUBS: <span style={{ color: 'var(--text-primary)' }}>{CHECKPOINTS.length} CITIES</span></div>
       </div>
     </div>
   );

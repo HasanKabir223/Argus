@@ -6,6 +6,7 @@ import os
 import time
 import cv2
 import shutil
+from datetime import datetime
 import numpy as np
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
 from pydantic import BaseModel
@@ -97,7 +98,31 @@ def update_event_status(event_id: str, body: StatusUpdateRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.delete("/events/{event_id}")
+def delete_single_event(event_id: str):
+    """
+    Deletes a single match sighting event from SQLite and memory.
+    """
+    success = EventService.delete_event(event_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Event not found or failed to delete")
+    return {"status": "ok", "deleted_id": event_id}
+
+
+@router.delete("/events")
+@router.post("/events/clear")
+def clear_all_events():
+    """
+    Clears all active match sightings from SQLite database & memory.
+    Provides a clean slate for manual pipeline testing.
+    """
+    EventService.clear_all_events()
+    return {"status": "ok", "message": "All active sightings cleared. Pipeline ready for manual testing."}
+
+
+
 @router.get("/reference-persons")
+
 def list_reference_persons():
     pipe = get_pipeline()
     return pipe.gallery_manager.get_all_persons()
@@ -116,14 +141,22 @@ async def enroll_reference_person(
 ):
     """
     Enrolls a new wanted criminal / person of interest into SQLite database & FAISS vector index.
+    Includes high-speed image preprocessing and real-time execution logging telemetry.
     """
+    t_start = time.time()
+    logs = []
+    now_str = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+    logs.append(f"[{now_str}] [INGEST] Received enrollment request for '{name}' (ID: {person_id})")
+
     pipe = get_pipeline()
     image = None
+    t_decode_start = time.time()
 
     if file is not None:
         try:
             contents = await file.read()
             if contents:
+                logs.append(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [STREAM] Read payload buffer: {len(contents)/1024:.1f} KB")
                 nparr = np.frombuffer(contents, np.uint8)
                 image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                 if image is None:
@@ -133,15 +166,30 @@ async def enroll_reference_person(
                         import io
                         pil_img = Image.open(io.BytesIO(contents)).convert("RGB")
                         image = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-                    except Exception:
-                        pass
+                        logs.append(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [DECODE] Decoded via PIL engine fallback")
+                    except Exception as pil_err:
+                        logs.append(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [WARN] PIL fallback note: {pil_err}")
+                else:
+                    logs.append(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [DECODE] Decoded image ({image.shape[1]}x{image.shape[0]} BGR)")
         except Exception as e:
+            logs.append(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [ERROR] Image stream read error: {e}")
             print(f"[Routes] Image read warning: {e}")
 
     if image is None:
+        logs.append(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [SYNTH] Generated synthetic biometric face portrait placeholder")
         image = np.zeros((112, 112, 3), dtype=np.uint8)
         cv2.circle(image, (56, 56), 40, (180, 140, 100), -1)
 
+    # High-speed normalization: downscale if image is overly large (> 800px)
+    h, w = image.shape[:2]
+    if max(h, w) > 800:
+        scale = 800.0 / max(h, w)
+        image = cv2.resize(image, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+        logs.append(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [RESIZE] Normalized image to {image.shape[1]}x{image.shape[0]} for sub-millisecond execution")
+
+    decode_ms = (time.time() - t_decode_start) * 1000.0
+
+    t_enroll_start = time.time()
     meta = pipe.gallery_manager.enroll_person(
         person_id=person_id,
         name=name,
@@ -152,10 +200,42 @@ async def enroll_reference_person(
         threat_level=threat_level,
         offense=offense
     )
+    enroll_ms = (time.time() - t_enroll_start) * 1000.0
+    total_ms = (time.time() - t_start) * 1000.0
+
+    faiss_count = pipe.search_engine._index.ntotal if pipe.search_engine._index else len(pipe.gallery_manager.persons)
+    logs.append(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [EMBED] Extracted 64-D ArcFace embedding vector")
+    logs.append(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [FAISS] Vector indexed into HNSW graph index (total vectors: {faiss_count})")
+    logs.append(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [SQLITE] Criminal dossier written to SQLite reference_persons table")
+    logs.append(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [SUCCESS] Target '{name}' active and live across all checkpoint cameras ({total_ms:.2f}ms total)")
+
+    meta["telemetry"] = {
+        "image_decode_ms": round(decode_ms, 2),
+        "enroll_ms": round(enroll_ms, 2),
+        "total_ms": round(total_ms, 2),
+        "faiss_vectors": faiss_count
+    }
+    meta["logs"] = logs
+
+    print(f"[Routes] ✓ Enrolled {name} ({person_id}) in {total_ms:.2f}ms. Total FAISS vectors: {faiss_count}")
     return meta
 
 
+
+@router.delete("/reference-persons/{person_id}")
+def delete_reference_person(person_id: str):
+    """
+    Deletes a criminal reference target from the SQLite database, FAISS vector index, and image storage.
+    """
+    pipe = get_pipeline()
+    success = pipe.gallery_manager.delete_person(person_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Person {person_id} not found")
+    return {"status": "DELETED", "person_id": person_id}
+
+
 @router.post("/watchlist/sync")
+
 def sync_watchlist():
     """
     Scans the WatchList folder and synchronizes all criminal profiles into SQLite and FAISS.

@@ -13,7 +13,8 @@ import { ShortcutsOverlay } from './components/ShortcutsOverlay';
 import { LoadingScreen } from './components/LoadingScreen';
 import { CctvStudioModal } from './components/CctvStudioModal';
 import { WatchlistGalleryModal } from './components/WatchlistGalleryModal';
-import { fetchEvents, updateEventStatus, type CctvMatch } from './services/api';
+import { fetchEvents, updateEventStatus, clearAllEvents, deleteEvent, type CctvMatch } from './services/api';
+
 
 function App() {
   const [isBooting, setIsBooting] = useState(true);
@@ -49,7 +50,7 @@ function App() {
   // Sync events from FastAPI backend
   const syncBackendEvents = useCallback(async () => {
     const backendEvents = await fetchEvents();
-    if (backendEvents && backendEvents.length > 0) {
+    if (backendEvents) {
       const mapped: Match[] = backendEvents.map(e => ({
         id: String(e.match_id || e.id),
         personId: e.person_id,
@@ -64,6 +65,25 @@ function App() {
       setMatches(mapped);
     }
   }, []);
+
+  const handleClearMatches = async () => {
+    await clearAllEvents();
+    setMatches([]);
+    setSelectedPersonId(null);
+    setSelectedMatchId(null);
+    addToast('All active sightings purged. Clean slate ready for manual testing.', 'info');
+  };
+
+  const handleDeleteMatch = async (matchId: string) => {
+    await deleteEvent(matchId);
+    setMatches(prev => prev.filter(m => m.id !== matchId));
+    if (selectedMatchId === matchId) {
+      setSelectedMatchId(null);
+    }
+    addToast('Sighting event purged from database.', 'info');
+  };
+
+
 
   useEffect(() => {
     syncBackendEvents();
@@ -257,6 +277,9 @@ function App() {
         matches={matches}
         selectedPersonId={selectedPersonId}
         onSelectPerson={handleSelectPerson}
+        onClearMatches={handleClearMatches}
+        onDeleteMatch={handleDeleteMatch}
+        onOpenCctvStudio={() => setShowCctvStudio(true)}
       />
 
       <TimelineStrip
@@ -316,8 +339,7 @@ function App() {
 
       {activeMatch && (
         <>
-          {/* Transparent click-catcher only — the globe/map must stay fully
-              visible and interactive behind the slide-over per PRD §5.6. */}
+          {/* Transparent click-catcher only */}
           <div style={{
             position: 'absolute',
             top: 0, left: 0, right: 0, bottom: 0,
@@ -331,10 +353,12 @@ function App() {
             onConfirm={handleConfirmMatch}
             onDismiss={handleDismissMatch}
             onFlag={handleFlagMatch}
+            onDeleteMatch={handleDeleteMatch}
             onSelectSighting={(matchId) => setSelectedMatchId(matchId)}
           />
         </>
       )}
+
 
       {showAuditLog && (
         <>

@@ -5,6 +5,7 @@ Maintains wanted person profiles, criminal records, synched ArcFace embeddings, 
 
 import os
 import cv2
+import time
 import numpy as np
 from typing import List, Dict, Any, Optional
 from backend.services.face_embedder import ArcFaceEmbedder
@@ -50,14 +51,30 @@ class GalleryManager:
         3. Persists criminal profile into SQLite reference_persons database table
         4. Adds profile to FAISS vector index & LSH hash tables
         """
+        t_start = time.time()
         photo_filename = f"{person_id}_{name.replace(' ', '_').lower()}.jpg"
         photo_path = os.path.join(self.gallery_dir, photo_filename)
-        cv2.imwrite(photo_path, photo_bgr)
+        
+        # Ensure image is valid and write to disk
+        if photo_bgr is not None and photo_bgr.size > 0:
+            # Resize if excessive size to speed up disk I/O and embedding
+            h, w = photo_bgr.shape[:2]
+            if max(h, w) > 800:
+                scale = 800.0 / max(h, w)
+                photo_bgr = cv2.resize(photo_bgr, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+            cv2.imwrite(photo_path, photo_bgr)
+        else:
+            photo_bgr = np.zeros((112, 112, 3), dtype=np.uint8)
+            cv2.circle(photo_bgr, (56, 56), 40, (180, 140, 100), -1)
+            cv2.imwrite(photo_path, photo_bgr)
 
-        # Generate real deep embedding from reference photo
+        # Generate deep embedding from reference photo
+        t_emb = time.time()
         embedding = self.embedder.get_embedding(photo_bgr)
+        emb_ms = (time.time() - t_emb) * 1000.0
 
         # 1. Persist to SQLite Database
+        t_db = time.time()
         saved_db_record = EventService.save_reference_person(
             person_id=person_id,
             name=name,
@@ -70,6 +87,7 @@ class GalleryManager:
             case_id=case_id or f"CR-{person_id.upper()}",
             warrant_status=warrant_status
         )
+        db_ms = (time.time() - t_db) * 1000.0
 
         meta = {
             "person_id": person_id,
@@ -93,9 +111,15 @@ class GalleryManager:
         else:
             self.persons.append(meta)
 
+        t_faiss = time.time()
         self.search_engine.add_reference(embedding, meta)
+        faiss_ms = (time.time() - t_faiss) * 1000.0
+
+        total_ms = (time.time() - t_start) * 1000.0
+        print(f"[GalleryManager] ✓ Enrolled {name} ({person_id}): Emb={emb_ms:.2f}ms, DB={db_ms:.2f}ms, FAISS={faiss_ms:.2f}ms | Total={total_ms:.2f}ms")
 
         return meta
+
 
     def get_all_persons(self) -> List[Dict[str, Any]]:
         """
@@ -121,6 +145,48 @@ class GalleryManager:
                 })
             return res
         return list(self.persons)
+
+    def delete_person(self, person_id: str) -> bool:
+        """
+        Deletes a criminal profile from:
+        1. SQLite reference_persons table
+        2. FAISS vector index & in-memory reference lists
+        3. Local static gallery photo file
+        """
+        # Find person metadata to locate photo file
+        person = next((p for p in self.persons if p.get("person_id") == person_id), None)
+        if not person:
+            db_persons = EventService.get_reference_persons()
+            person = next((p for p in db_persons if p.get("person_id") == person_id), None)
+
+        # 1. Delete from SQLite DB
+        EventService.delete_reference_person(person_id)
+
+        # 2. Delete photo file from gallery directory if present
+        if person:
+            p_path = person.get("photo_path") or ""
+            if p_path and os.path.exists(p_path):
+                try:
+                    os.remove(p_path)
+                except Exception as e:
+                    print(f"[GalleryManager] Photo remove note: {e}")
+            elif person.get("photo_url"):
+                fname = os.path.basename(person["photo_url"])
+                g_path = os.path.join(self.gallery_dir, fname)
+                if os.path.exists(g_path):
+                    try:
+                        os.remove(g_path)
+                    except Exception:
+                        pass
+
+        # 3. Remove from in-memory list
+        self.persons = [p for p in self.persons if p.get("person_id") != person_id]
+
+        # 4. Remove from FAISS index & rebuild
+        self.search_engine.remove_reference(person_id)
+
+        return True
+
 
     def load_initial_gallery(self, seed_profiles: List[Dict[str, Any]]):
         """

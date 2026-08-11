@@ -69,14 +69,24 @@ class CctvIngestionService:
         checkpoints_pool = EventService.get_checkpoints()
         if not checkpoints_pool:
             checkpoints_pool = [
-                {"id": "cp-01", "name": "Grand Central Terminal", "lat": 40.7527, "lng": -73.9772},
-                {"id": "cp-02", "name": "Penn Station", "lat": 40.7505, "lng": -73.9934},
-                {"id": "cp-03", "name": "Port Authority Bus Terminal", "lat": 40.7570, "lng": -73.9902},
-                {"id": "cp-04", "name": "JFK Airport - T4", "lat": 40.6413, "lng": -73.7781},
-                {"id": "cp-05", "name": "Newark Liberty - C", "lat": 40.6895, "lng": -74.1745},
-                {"id": "cp-06", "name": "Times Square - 42nd St", "lat": 40.7580, "lng": -73.9855},
-                {"id": "cp-07", "name": "Brooklyn Bridge", "lat": 40.7061, "lng": -73.9969}
+                {"id": "cp-01", "name": "JFK International Airport - T4", "city": "New York", "lat": 40.6413, "lng": -73.7781},
+                {"id": "cp-02", "name": "Capitol Hill & Union Station Hub", "city": "Washington DC", "lat": 38.8977, "lng": -77.0057},
+                {"id": "cp-03", "name": "LAX International - Tom Bradley", "city": "Los Angeles", "lat": 33.9416, "lng": -118.4085},
+                {"id": "cp-04", "name": "O'Hare International Airport - T5", "city": "Chicago", "lat": 41.9742, "lng": -87.9073},
+                {"id": "cp-05", "name": "Port of Miami & Downtown Corridor", "city": "Miami", "lat": 25.7781, "lng": -80.1791},
+                {"id": "cp-06", "name": "DFW International Airport Hub", "city": "Dallas", "lat": 32.8998, "lng": -97.0403},
+                {"id": "cp-07", "name": "SFO International & Golden Gate", "city": "San Francisco", "lat": 37.6213, "lng": -122.3790},
+                {"id": "cp-08", "name": "Sea-Tac International & Puget Sound", "city": "Seattle", "lat": 47.4502, "lng": -122.3088},
+                {"id": "cp-09", "name": "Denver International Airport", "city": "Denver", "lat": 39.8561, "lng": -104.6737},
+                {"id": "cp-10", "name": "Hartsfield-Jackson International", "city": "Atlanta", "lat": 33.6407, "lng": -84.4277},
+                {"id": "cp-11", "name": "Logan International Airport", "city": "Boston", "lat": 42.3656, "lng": -71.0096},
+                {"id": "cp-12", "name": "Harry Reid Airport & Vegas Strip", "city": "Las Vegas", "lat": 36.0840, "lng": -115.1537},
+                {"id": "cp-13", "name": "Sky Harbor International - T4", "city": "Phoenix", "lat": 33.4352, "lng": -112.0101},
+                {"id": "cp-14", "name": "Ambassador Bridge Border Crossing", "city": "Detroit", "lat": 42.3120, "lng": -83.0740},
+                {"id": "cp-15", "name": "Daniel K. Inouye International", "city": "Honolulu", "lat": 21.3245, "lng": -157.9251}
             ]
+
+
 
         results = []
         seen_filenames = set()

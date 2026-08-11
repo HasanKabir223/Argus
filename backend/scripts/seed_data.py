@@ -12,14 +12,23 @@ from backend.services.pipeline import CheckpointPipeline
 
 
 DEFAULT_CHECKPOINTS = [
-    {"id": "cp-01", "name": "Grand Central Terminal", "lat": 40.7527, "lng": -73.9772, "status": "ACTIVE"},
-    {"id": "cp-02", "name": "Penn Station", "lat": 40.7505, "lng": -73.9934, "status": "ACTIVE"},
-    {"id": "cp-03", "name": "Port Authority Bus Terminal", "lat": 40.7570, "lng": -73.9902, "status": "ACTIVE"},
-    {"id": "cp-04", "name": "JFK Airport - T4", "lat": 40.6413, "lng": -73.7781, "status": "ACTIVE"},
-    {"id": "cp-05", "name": "Newark Liberty - C", "lat": 40.6895, "lng": -74.1745, "status": "ACTIVE"},
-    {"id": "cp-06", "name": "Times Square - 42nd St", "lat": 40.7580, "lng": -73.9855, "status": "ACTIVE"},
-    {"id": "cp-07", "name": "Brooklyn Bridge", "lat": 40.7061, "lng": -73.9969, "status": "ACTIVE"},
+    {"id": "cp-01", "name": "JFK International Airport - T4", "lat": 40.6413, "lng": -73.7781, "status": "ACTIVE"},
+    {"id": "cp-02", "name": "Capitol Hill & Union Station Hub", "lat": 38.8977, "lng": -77.0057, "status": "ACTIVE"},
+    {"id": "cp-03", "name": "LAX International - Tom Bradley", "lat": 33.9416, "lng": -118.4085, "status": "ACTIVE"},
+    {"id": "cp-04", "name": "O'Hare International Airport - T5", "lat": 41.9742, "lng": -87.9073, "status": "ACTIVE"},
+    {"id": "cp-05", "name": "Port of Miami & Downtown Corridor", "lat": 25.7781, "lng": -80.1791, "status": "ACTIVE"},
+    {"id": "cp-06", "name": "DFW International Airport Hub", "lat": 32.8998, "lng": -97.0403, "status": "ACTIVE"},
+    {"id": "cp-07", "name": "SFO International & Golden Gate", "lat": 37.6213, "lng": -122.3790, "status": "ACTIVE"},
+    {"id": "cp-08", "name": "Sea-Tac International & Puget Sound", "lat": 47.4502, "lng": -122.3088, "status": "ACTIVE"},
+    {"id": "cp-09", "name": "Denver International Airport", "lat": 39.8561, "lng": -104.6737, "status": "ACTIVE"},
+    {"id": "cp-10", "name": "Hartsfield-Jackson International", "lat": 33.6407, "lng": -84.4277, "status": "ACTIVE"},
+    {"id": "cp-11", "name": "Logan International Airport", "lat": 42.3656, "lng": -71.0096, "status": "ACTIVE"},
+    {"id": "cp-12", "name": "Harry Reid Airport & Vegas Strip", "lat": 36.0840, "lng": -115.1537, "status": "ACTIVE"},
+    {"id": "cp-13", "name": "Sky Harbor International - T4", "lat": 33.4352, "lng": -112.0101, "status": "ACTIVE"},
+    {"id": "cp-14", "name": "Ambassador Bridge Border Crossing", "lat": 42.3120, "lng": -83.0740, "status": "ACTIVE"},
+    {"id": "cp-15", "name": "Daniel K. Inouye International", "lat": 21.3245, "lng": -157.9251, "status": "ACTIVE"}
 ]
+
 
 
 # ─── Watchlist Profile Registry ──────────────────────────────────────────────
