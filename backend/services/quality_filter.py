@@ -39,11 +39,11 @@ def is_too_blurry(face_crop: np.ndarray, threshold: float = 80.0) -> bool:
 class QualityFilter:
     def __init__(
         self,
-        min_size: int = 40,
-        blur_threshold: float = 80.0,
-        det_threshold: float = 0.35,
-        min_aspect_ratio: float = 0.5,
-        max_aspect_ratio: float = 2.0,
+        min_size: int = 16,
+        blur_threshold: float = 15.0,
+        det_threshold: float = 0.30,
+        min_aspect_ratio: float = 0.45,
+        max_aspect_ratio: float = 2.2,
     ):
         self.min_size = min_size
         self.blur_threshold = blur_threshold

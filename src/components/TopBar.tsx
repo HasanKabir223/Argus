@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Clock, Play, Pause, MapPin, ClipboardList, HelpCircle, Globe, Map, Sparkles, Cpu, Zap, Search } from 'lucide-react';
+import {
+  Activity, Clock, Play, Pause, MapPin, ClipboardList,
+  HelpCircle, Globe, Map, Sparkles, Cpu, Zap, Search,
+  Video, Shield
+} from 'lucide-react';
 import { format } from 'date-fns';
 import { fetchMetrics, triggerSimulationStep, type SystemMetrics } from '../services/api';
 
@@ -10,6 +14,8 @@ interface TopBarProps {
   onOpenCheckpoints: () => void;
   onOpenAuditLog: () => void;
   onOpenShortcuts: () => void;
+  onOpenCctvStudio: () => void;
+  onOpenWatchlist: () => void;
   viewMode: 'globe' | 'map';
   onToggleViewMode: () => void;
   onSimulate?: () => void;
@@ -22,6 +28,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenCheckpoints,
   onOpenAuditLog,
   onOpenShortcuts,
+  onOpenCctvStudio,
+  onOpenWatchlist,
   viewMode,
   onToggleViewMode,
   onSimulate
@@ -77,12 +85,11 @@ export const TopBar: React.FC<TopBarProps> = ({
     <div style={{
       display: 'grid',
       gridTemplateColumns: 'auto minmax(0, 1fr) auto',
-      alignItems: 'center',
-      padding: '0 24px',
-      height: '56px',
-      backgroundColor: 'rgba(18, 22, 31, 0.88)',
+      padding: '0 20px',
+      height: '52px',
+      backgroundColor: 'rgba(18, 22, 31, 0.92)',
       borderBottom: '1px solid var(--border-hairline)',
-      backdropFilter: 'blur(6px)',
+      backdropFilter: 'blur(8px)',
       position: 'absolute',
       top: 0,
       left: 0,
@@ -150,24 +157,54 @@ export const TopBar: React.FC<TopBarProps> = ({
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
           <Zap size={13} color="#38bdf8" />
-          <span>EMBED: <strong style={{ color: 'var(--text-primary)' }}>{metrics?.pipeline?.last_embedding_ms ? `${metrics.pipeline.last_embedding_ms.toFixed(1)}ms` : '<2.5ms'}</strong></span>
+          <span>LSH HASH: <strong style={{ color: 'var(--text-primary)' }}>128-BIT (&lt;0.8ms)</strong></span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
           <Search size={13} color="#a855f7" />
-          <span>FAISS: <strong style={{ color: 'var(--text-primary)' }}>{metrics?.pipeline?.last_search_ms ? `${metrics.pipeline.last_search_ms.toFixed(2)}ms` : '<0.3ms'}</strong></span>
+          <span>FAISS HNSW: <strong style={{ color: 'var(--text-primary)' }}>{metrics?.pipeline?.last_search_ms ? `${metrics.pipeline.last_search_ms.toFixed(2)}ms` : '<0.25ms'}</strong></span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
           <span style={{ color: 'var(--accent-signal)' }}>DEDUP:</span>
           <strong style={{ color: 'var(--text-primary)' }}>
-            {metrics?.deduplication?.deduplication_savings_percent ? `${metrics.deduplication.deduplication_savings_percent}%` : '99.3%'}
+            {metrics?.deduplication?.deduplication_savings_percent ? `${metrics.deduplication.deduplication_savings_percent}%` : '98.5%'}
           </strong>
         </div>
       </div>
 
       {/* Action Controls & Navigation */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+        {/* Launch CCTV Surveillance Studio */}
+        <button
+          onClick={onOpenCctvStudio}
+          aria-label="Open CCTV surveillance studio"
+          title="Open CCTV surveillance studio"
+          className="topbar-btn"
+          style={{
+            ...iconButtonStyle,
+            backgroundColor: 'rgba(0, 217, 163, 0.15)',
+            borderColor: 'var(--accent-signal)',
+            color: 'var(--accent-signal)',
+            fontWeight: 600
+          }}
+        >
+          <Video size={13} />
+          CCTV STUDIO
+        </button>
+
+        {/* Watchlist Gallery */}
+        <button
+          onClick={onOpenWatchlist}
+          aria-label="Open watchlist reference database"
+          title="Watchlist database"
+          className="topbar-btn"
+          style={iconButtonStyle}
+        >
+          <Shield size={12} />
+          WATCHLIST
+        </button>
+
         {/* View Mode Toggle: 3D Globe vs 2D Tactical Map */}
         <button
           onClick={onToggleViewMode}

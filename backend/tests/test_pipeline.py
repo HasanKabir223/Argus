@@ -99,6 +99,48 @@ class TestArcFaceAndFaiss(unittest.TestCase):
         self.assertGreaterEqual(results[0]["confidence"], 0.75)
         self.assertEqual(results[0]["tier"], "CONFIRMED")
 
+    def test_lfw_cross_photo_recognition(self):
+        import os
+        from backend.scripts.download_lfw import LFW_GALLERY_DIR, LFW_SIGHTINGS_DIR
+        
+        # Check if LFW gallery has photos
+        if not os.path.exists(LFW_GALLERY_DIR) or not os.listdir(LFW_GALLERY_DIR):
+            return
+
+        gallery_files = sorted([f for f in os.listdir(LFW_GALLERY_DIR) if f.endswith('.jpg')])
+        if len(gallery_files) < 2:
+            return
+
+        # Load reference photos for Person 1 and Person 2
+        p1_ref_path = os.path.join(LFW_GALLERY_DIR, gallery_files[0])
+        p2_ref_path = os.path.join(LFW_GALLERY_DIR, gallery_files[1])
+        p1_img = cv2.imread(p1_ref_path)
+        p2_img = cv2.imread(p2_ref_path)
+
+        p1_id = gallery_files[0].split('_')[0]
+        p2_id = gallery_files[1].split('_')[0]
+
+        p1_emb = self.embedder.get_embedding(p1_img)
+        p2_emb = self.embedder.get_embedding(p2_img)
+
+        self.searcher.set_reference_database(
+            np.vstack([p1_emb, p2_emb]),
+            [{"person_id": p1_id, "name": "Person 1"}, {"person_id": p2_id, "name": "Person 2"}]
+        )
+
+        # Look for alternate sighting photo of Person 1
+        sighting_files = [f for f in os.listdir(LFW_SIGHTINGS_DIR) if f.startswith(f"sighting_{p1_id}_")]
+        if sighting_files:
+            sight_img = cv2.imread(os.path.join(LFW_SIGHTINGS_DIR, sighting_files[0]))
+            sight_emb = self.embedder.get_embedding(sight_img)
+
+            # Query FAISS
+            results = self.searcher.search(sight_emb, top_k=2, threshold=0.40)
+            self.assertGreater(len(results), 0)
+            # Person 1 should be the top match!
+            self.assertEqual(results[0]["person"]["person_id"], p1_id)
+            print(f"\n[Test ArcFace LFW] Genuine match confidence for {p1_id}: {results[0]['confidence']:.4f}")
+
 
 class TestSQLiteEventService(unittest.TestCase):
     def setUp(self):

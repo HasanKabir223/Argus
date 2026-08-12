@@ -11,28 +11,30 @@ import { CheckpointStatusPanel } from './components/CheckpointStatusPanel';
 import { AuditLogPanel, type AuditEntry } from './components/AuditLogPanel';
 import { ShortcutsOverlay } from './components/ShortcutsOverlay';
 import { LoadingScreen } from './components/LoadingScreen';
-import { fetchEvents, updateEventStatus } from './services/api';
+import { CctvStudioModal } from './components/CctvStudioModal';
+import { WatchlistGalleryModal } from './components/WatchlistGalleryModal';
+import { fetchEvents, updateEventStatus, clearAllEvents, deleteEvent, type CctvMatch } from './services/api';
+
 
 function App() {
   const [isBooting, setIsBooting] = useState(true);
   const [matches, setMatches] = useState<Match[]>(INITIAL_MATCHES);
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'globe' | 'map'>('globe');
+  const [viewMode, setViewMode] = useState<'globe' | 'map'>('map');
   const [isLive, setIsLive] = useState(true);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
   const [showCheckpoints, setShowCheckpoints] = useState(false);
   const [showAuditLog, setShowAuditLog] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
-  // null = live; a timestamp (ms) = operator has dragged the timeline
-  // playhead back and the globe/map should show state as of that moment
-  // (PRD §5.3 Screen 5: "Drag playhead → globe/map replays up to that point").
+  const [showCctvStudio, setShowCctvStudio] = useState(false);
+  const [showWatchlist, setShowWatchlist] = useState(false);
   const [replayTime, setReplayTime] = useState<number | null>(null);
 
   // Boot sequence
   useEffect(() => {
-    const timer = setTimeout(() => setIsBooting(false), 900);
+    const timer = setTimeout(() => setIsBooting(false), 800);
     return () => clearTimeout(timer);
   }, []);
 
@@ -48,7 +50,7 @@ function App() {
   // Sync events from FastAPI backend
   const syncBackendEvents = useCallback(async () => {
     const backendEvents = await fetchEvents();
-    if (backendEvents && backendEvents.length > 0) {
+    if (backendEvents) {
       const mapped: Match[] = backendEvents.map(e => ({
         id: String(e.match_id || e.id),
         personId: e.person_id,
@@ -63,6 +65,25 @@ function App() {
       setMatches(mapped);
     }
   }, []);
+
+  const handleClearMatches = async () => {
+    await clearAllEvents();
+    setMatches([]);
+    setSelectedPersonId(null);
+    setSelectedMatchId(null);
+    addToast('All active sightings purged. Clean slate ready for manual testing.', 'info');
+  };
+
+  const handleDeleteMatch = async (matchId: string) => {
+    await deleteEvent(matchId);
+    setMatches(prev => prev.filter(m => m.id !== matchId));
+    if (selectedMatchId === matchId) {
+      setSelectedMatchId(null);
+    }
+    addToast('Sighting event purged from database.', 'info');
+  };
+
+
 
   useEffect(() => {
     syncBackendEvents();
@@ -79,6 +100,8 @@ function App() {
       if (isTyping) return;
       if (e.key === 'p' || e.key === 'P') setIsLive(prev => !prev);
       if (e.key === 'v' || e.key === 'V') setViewMode(prev => prev === 'globe' ? 'map' : 'globe');
+      if (e.key === 'c' || e.key === 'C') setShowCctvStudio(prev => !prev);
+      if (e.key === 'w' || e.key === 'W') setShowWatchlist(prev => !prev);
       if (e.key === '?') setShowShortcuts(prev => !prev);
     };
     window.addEventListener('keydown', handleKey);
@@ -108,6 +131,37 @@ function App() {
     }
   };
 
+  const handlePinpointCctvMatch = async (match: CctvMatch) => {
+    setViewMode('map');
+    setShowCctvStudio(false);
+
+    // Immediately create tactical match object so map renders it without waiting for poll
+    const matchId = String(match.event_id || `m-cctv-${Date.now()}`);
+    const newMatch: Match = {
+      id: matchId,
+      personId: match.person_id,
+      name: match.name,
+      checkpointId: match.checkpoint_id,
+      confidence: match.confidence,
+      timestamp: new Date(),
+      status: match.tier === 'CONFIRMED' ? 'CONFIRMED' : 'PENDING REVIEW',
+      faceCropUrl: match.face_crop_path ? `http://localhost:8000${match.face_crop_path}` : undefined,
+      referencePhotoUrl: match.reference_photo_path ? `http://localhost:8000${match.reference_photo_path}` : undefined
+    };
+
+    setMatches(prev => {
+      const exists = prev.some(m => m.id === matchId || (m.personId === match.person_id && m.checkpointId === match.checkpoint_id));
+      return exists ? prev : [newMatch, ...prev];
+    });
+
+    setSelectedPersonId(match.person_id);
+    setSelectedMatchId(matchId);
+    addToast(`Target sighted: ${match.name} at ${match.checkpoint_name} (${(match.confidence * 100).toFixed(1)}%)`, 'alert');
+
+    // Sync backend database in background
+    syncBackendEvents();
+  };
+
   const handleConfirmMatch = async (matchId: string) => {
     const match = matches.find(m => m.id === matchId);
     setMatches(prev => prev.map(m => m.id === matchId ? { ...m, status: 'CONFIRMED' } : m));
@@ -121,7 +175,7 @@ function App() {
         checkpointName: cp?.name ?? match.checkpointId,
         timestamp: new Date(),
       }]);
-      addToast(`Match ${match.personId} confirmed`, 'success');
+      addToast(`Match ${match.personId} (${match.name}) confirmed`, 'success');
     }
     setSelectedMatchId(null);
     setSelectedPersonId(null);
@@ -200,22 +254,32 @@ function App() {
         onOpenCheckpoints={() => setShowCheckpoints(prev => !prev)}
         onOpenAuditLog={() => setShowAuditLog(true)}
         onOpenShortcuts={() => setShowShortcuts(true)}
+        onOpenCctvStudio={() => setShowCctvStudio(true)}
+        onOpenWatchlist={() => setShowWatchlist(true)}
         viewMode={viewMode}
         onToggleViewMode={() => setViewMode(prev => prev === 'globe' ? 'map' : 'globe')}
         onSimulate={syncBackendEvents}
       />
 
-      {/* Main Viewport: 3D Globe vs 2D Tactical Map */}
+      {/* Main Viewport: 2D Tactical Map vs 3D Globe */}
       {viewMode === 'globe' ? (
         <GlobeView matches={visibleMatches} selectedPersonId={selectedPersonId} />
       ) : (
-        <MapView matches={visibleMatches} selectedPersonId={selectedPersonId} onSelectCheckpoint={handleSelectCheckpoint} />
+        <MapView
+          matches={visibleMatches}
+          selectedPersonId={selectedPersonId}
+          onSelectCheckpoint={handleSelectCheckpoint}
+          onSelectMatch={setSelectedMatchId}
+        />
       )}
 
       <MatchListPanel
         matches={matches}
         selectedPersonId={selectedPersonId}
         onSelectPerson={handleSelectPerson}
+        onClearMatches={handleClearMatches}
+        onDeleteMatch={handleDeleteMatch}
+        onOpenCctvStudio={() => setShowCctvStudio(true)}
       />
 
       <TimelineStrip
@@ -226,14 +290,56 @@ function App() {
       />
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
+      {/* CCTV Surveillance Studio Modal */}
+      {showCctvStudio && (
+        <>
+          <div
+            style={{
+              position: 'absolute',
+              top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: 'rgba(10, 14, 20, 0.75)',
+              backdropFilter: 'blur(5px)',
+              zIndex: 210,
+            }}
+            onClick={() => setShowCctvStudio(false)}
+          />
+          <CctvStudioModal
+            onClose={() => {
+              setShowCctvStudio(false);
+              syncBackendEvents();
+            }}
+            onPinpointMatch={handlePinpointCctvMatch}
+          />
+        </>
+      )}
+
+      {/* Watchlist Gallery Modal */}
+      {showWatchlist && (
+        <>
+          <div
+            style={{
+              position: 'absolute',
+              top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: 'rgba(10, 14, 20, 0.75)',
+              backdropFilter: 'blur(5px)',
+              zIndex: 210,
+            }}
+            onClick={() => setShowWatchlist(false)}
+          />
+          <WatchlistGalleryModal
+            onClose={() => setShowWatchlist(false)}
+            onSelectPerson={handleSelectPerson}
+          />
+        </>
+      )}
+
       {showCheckpoints && (
         <CheckpointStatusPanel matches={matches} onClose={() => setShowCheckpoints(false)} />
       )}
 
       {activeMatch && (
         <>
-          {/* Transparent click-catcher only — the globe/map must stay fully
-              visible and interactive behind the slide-over per PRD §5.6. */}
+          {/* Transparent click-catcher only */}
           <div style={{
             position: 'absolute',
             top: 0, left: 0, right: 0, bottom: 0,
@@ -247,10 +353,12 @@ function App() {
             onConfirm={handleConfirmMatch}
             onDismiss={handleDismissMatch}
             onFlag={handleFlagMatch}
+            onDeleteMatch={handleDeleteMatch}
             onSelectSighting={(matchId) => setSelectedMatchId(matchId)}
           />
         </>
       )}
+
 
       {showAuditLog && (
         <>

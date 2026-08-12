@@ -1,20 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { type Match, CHECKPOINTS } from '../data/mockData';
-import { X, CheckCircle, AlertTriangle, Copy, Check, ShieldAlert, Flag, History } from 'lucide-react';
+import { format } from 'date-fns';
+import { X, CheckCircle, AlertTriangle, Copy, Check, ShieldAlert, Fingerprint, Flag, History, Trash2 } from 'lucide-react';
 import { getConfidenceColor } from '../utils/confidence';
 import { FaceThumb } from './FaceThumb';
 
 interface MatchDetailModalProps {
   match: Match;
-  /** All matches for this same person, chronological (oldest first) — feeds the
-   *  sighting-history list and the globe's arc animation (PRD §5.3 Screen 3). */
   sightingHistory: Match[];
   onClose: () => void;
   onConfirm: (id: string) => void;
   onDismiss: (id: string) => void;
   onFlag: (id: string) => void;
+  onDeleteMatch?: (id: string) => void;
   onSelectSighting: (matchId: string) => void;
 }
+
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -37,8 +38,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
     closeButtonRef.current?.focus();
   }, []);
 
-  // Real focus trap: cycles Tab / Shift+Tab within the modal's focusable elements
-  // and returns focus if it somehow escapes (e.g. a focus() call from elsewhere).
+  // Focus trap
   useEffect(() => {
     const previouslyFocused = document.activeElement as HTMLElement | null;
 
@@ -55,60 +55,37 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
       if (e.key !== 'Tab') return;
 
       const focusable = getFocusable();
-      if (focusable.length === 0) {
-        e.preventDefault();
-        return;
-      }
+      if (focusable.length === 0) return;
 
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      const active = document.activeElement as HTMLElement | null;
 
-      if (e.shiftKey) {
-        if (active === first || !modalRef.current?.contains(active)) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (active === last || !modalRef.current?.contains(active)) {
-          e.preventDefault();
-          first.focus();
-        }
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
       }
     };
 
-    const handleFocusIn = (e: FocusEvent) => {
-      // If focus somehow lands outside the modal, pull it back in.
-      if (modalRef.current && !modalRef.current.contains(e.target as Node)) {
-        const focusable = getFocusable();
-        (focusable[0] ?? closeButtonRef.current)?.focus();
-      }
-    };
-
-    window.addEventListener('keydown', handleKey);
-    document.addEventListener('focusin', handleFocusIn);
+    document.addEventListener('keydown', handleKey);
     return () => {
-      window.removeEventListener('keydown', handleKey);
-      document.removeEventListener('focusin', handleFocusIn);
-      previouslyFocused?.focus();
+      document.removeEventListener('keydown', handleKey);
+      previouslyFocused?.focus?.();
     };
   }, [onClose]);
 
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(match.personId);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard API unavailable
-    }
+  const handleCopy = () => {
+    navigator.clipboard.writeText(match.personId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
+  const confidencePct = Math.round(match.confidence * 100);
   const isConfirmed = match.status === 'CONFIRMED';
   const isPending = match.status === 'PENDING REVIEW';
-
-  const refImgSrc = match.referencePhotoUrl || `http://localhost:8000/static/gallery/${match.personId}_doe,_john.jpg`;
-  const liveImgSrc = match.faceCropUrl || `http://localhost:8000/static/gallery/${match.personId}_doe,_john.jpg`;
+  const hashPreview = "bf0e06a617cbf470b39226d411ebb031";
 
   return (
     <div
@@ -119,22 +96,25 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
       className="slide-over-enter"
       style={{
         position: 'absolute',
-        top: '56px',
-        right: 0,
-        bottom: '56px',
-        width: '440px',
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: '680px',
         maxWidth: '92vw',
+        maxHeight: '90vh',
         backgroundColor: 'var(--bg-panel)',
-        borderLeft: '1px solid var(--border-hairline)',
+        border: '1px solid var(--border-hairline)',
+        boxShadow: '0 24px 64px rgba(0,0,0,0.85)',
         zIndex: 160,
         overflowY: 'auto',
         display: 'flex',
-        flexDirection: 'column'
+        flexDirection: 'column',
+        backdropFilter: 'blur(12px)'
       }}
     >
       {/* Modal Header */}
       <div style={{
-        padding: '12px 16px',
+        padding: '14px 20px',
         borderBottom: '1px solid var(--border-hairline)',
         display: 'flex',
         justifyContent: 'space-between',
@@ -144,349 +124,320 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
         top: 0,
         zIndex: 1
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-          <ShieldAlert size={16} color={getConfidenceColor(match.confidence)} style={{ flexShrink: 0 }} />
-          <h2 className="mono-display" style={{ fontSize: '0.85rem', margin: 0, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            HUMAN REVIEW // {match.id}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <ShieldAlert size={18} color={getConfidenceColor(match.confidence)} />
+          <h2 className="mono-display" style={{ fontSize: '0.95rem', margin: 0, color: 'var(--text-primary)' }}>
+            SURVEILLANCE SIGHTING // ID: {match.id}
           </h2>
         </div>
-        <button
-          ref={closeButtonRef}
-          onClick={onClose}
-          aria-label="Close match details"
-          style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0 }}
-        >
-          <X size={20} />
-        </button>
-      </div>
-
-      <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px', flex: 1 }}>
-        {/* Photos side-by-side: Reference Database vs Live Checkpoint Crop */}
-        <div style={{ display: 'flex', gap: '10px' }}>
-          {/* Reference Photo */}
-          <div style={{ flex: 1 }}>
-            <div style={{
-              fontSize: '0.7rem',
-              color: 'var(--text-secondary)',
-              marginBottom: '6px',
-              fontFamily: "'IBM Plex Mono', monospace",
-              textTransform: 'uppercase'
-            }}>
-              Reference (Gallery)
-            </div>
-            <div
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {onDeleteMatch && (
+            <button
+              onClick={() => {
+                onDeleteMatch(match.id);
+                onClose();
+              }}
+              aria-label="Delete this sighting"
+              title="Purge this sighting event"
               style={{
-                width: '100%',
-                aspectRatio: '1/1',
-                backgroundColor: 'var(--bg-void)',
-                border: '1px solid var(--border-hairline)',
-                overflow: 'hidden',
-                position: 'relative'
+                background: 'rgba(255, 71, 87, 0.1)',
+                border: '1px solid rgba(255, 71, 87, 0.3)',
+                color: 'var(--accent-alert)',
+                cursor: 'pointer',
+                padding: '5px 8px',
+                fontSize: '0.72rem',
+                fontFamily: "'IBM Plex Mono', monospace",
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                borderRadius: '2px'
               }}
             >
-              <FaceThumb src={refImgSrc} alt="Reference target" personId={match.personId} />
-              <div style={{
-                position: 'absolute',
-                bottom: '4px',
-                left: '4px',
-                backgroundColor: 'rgba(10, 14, 20, 0.85)',
-                padding: '2px 6px',
-                fontSize: '0.65rem',
-                fontFamily: "'IBM Plex Mono', monospace"
-              }}>
-                ARCFACE 512D
+              <Trash2 size={13} /> DELETE SIGHTING
+            </button>
+          )}
+
+          <button
+            ref={closeButtonRef}
+            onClick={onClose}
+            aria-label="Close match details"
+            style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+      </div>
+
+
+      <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        {/* Top: Side-by-Side Face Comparison & Cosine Meter */}
+        <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+          {/* Side-by-side photos */}
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                REFERENCE (GALLERY)
+              </span>
+              <div style={{ width: '110px', height: '110px', overflow: 'hidden', borderRadius: '2px', border: '1px solid var(--border-hairline)' }}>
+                <FaceThumb
+                  src={match.referencePhotoUrl || ''}
+                  alt={match.name || match.personId}
+                  personId={match.personId}
+                />
               </div>
+              <span style={{ fontSize: '0.62rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                EMBEDDING 64D
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                CCTV CLIP (LIVE)
+              </span>
+              <div style={{ width: '110px', height: '110px', overflow: 'hidden', borderRadius: '2px', border: '1px solid var(--border-hairline)' }}>
+                <FaceThumb
+                  src={match.faceCropUrl || ''}
+                  alt="LIVE CCTV"
+                  personId={match.personId}
+                />
+              </div>
+              <span style={{ fontSize: '0.62rem', color: 'var(--accent-signal)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                RETINAFACE + LSH
+              </span>
             </div>
           </div>
 
-          {/* Live Checkpoint Crop */}
-          <div style={{ flex: 1 }}>
-            <div style={{
-              fontSize: '0.7rem',
-              color: 'var(--text-secondary)',
-              marginBottom: '6px',
-              fontFamily: "'IBM Plex Mono', monospace",
-              textTransform: 'uppercase'
-            }}>
-              Checkpoint (Live)
+          {/* Similarity & Metadata */}
+          <div style={{ flex: 1, minWidth: '220px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                COSINE SIMILARITY SCORE
+              </div>
+              <div className="mono-display" style={{ fontSize: '2rem', fontWeight: 700, color: getConfidenceColor(match.confidence), lineHeight: 1.1 }}>
+                {match.confidence ? `${(match.confidence * 100).toFixed(1)}%` : `${confidencePct}%`}
+              </div>
+
+              {/* Progress bar with threshold indicator */}
+              <div style={{ position: 'relative', margin: '8px 0 16px' }}>
+                <div style={{ height: '5px', backgroundColor: 'var(--bg-void)', borderRadius: '2px', overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%',
+                    width: `${confidencePct}%`,
+                    backgroundColor: getConfidenceColor(match.confidence),
+                    transition: 'width 0.3s ease'
+                  }} />
+                </div>
+                {/* 75% threshold marker */}
+                <div style={{
+                  position: 'absolute',
+                  top: '-3px',
+                  left: '75%',
+                  width: '2px',
+                  height: '11px',
+                  backgroundColor: '#fff'
+                }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem', color: 'var(--text-secondary)', marginTop: '4px', fontFamily: "'IBM Plex Mono', monospace" }}>
+                  <span>0%</span>
+                  <span>REVIEW (60%)</span>
+                  <span>CONFIRMED (75%)</span>
+                  <span>100%</span>
+                </div>
+              </div>
             </div>
-            <div
-              style={{
-                width: '100%',
-                aspectRatio: '1/1',
-                backgroundColor: 'var(--bg-void)',
-                border: '1px solid var(--border-hairline)',
-                overflow: 'hidden',
-                position: 'relative'
-              }}
-            >
-              <FaceThumb src={liveImgSrc} alt="Live checkpoint crop" personId={match.personId} />
-              <div style={{
-                position: 'absolute',
-                bottom: '4px',
-                left: '4px',
-                backgroundColor: 'rgba(10, 14, 20, 0.85)',
-                padding: '2px 6px',
-                fontSize: '0.65rem',
-                color: getConfidenceColor(match.confidence),
-                fontFamily: "'IBM Plex Mono', monospace"
-              }}>
-                RETINAFACE-MOBILENET
+
+            <div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                PERSON ID & NAME
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <strong style={{ fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                  {match.personId} ({match.name || 'Wanted Suspect'})
+                </strong>
+                <button
+                  onClick={handleCopy}
+                  aria-label="Copy person ID"
+                  style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 0 }}
+                >
+                  {copied ? <Check size={13} color="var(--accent-signal)" /> : <Copy size={13} />}
+                </button>
+              </div>
+
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                CHECKPOINT & CAMERA
+              </div>
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-primary)' }}>
+                <strong>{cp?.city ? `${cp.city}, ${cp.state} — ` : ''}{cp?.name || match.checkpointId}</strong>
+                {cp && <span style={{ color: 'var(--text-secondary)', marginLeft: '6px' }}>({cp.lat.toFixed(4)}°N, {Math.abs(cp.lng).toFixed(4)}°W)</span>}
+              </div>
+
+
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace", marginTop: '6px' }}>
+                SIGHTING TIMESTAMP
+              </div>
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-primary)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                {format(match.timestamp, 'yyyy-MM-dd HH:mm:ss')} UTC
               </div>
             </div>
           </div>
         </div>
 
-        {/* Confidence & Metadata */}
-        <div>
-          <div style={{ marginBottom: '18px' }}>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '2px', fontFamily: "'IBM Plex Mono', monospace" }}>
-              COSINE SIMILARITY SCORE
-            </div>
-            <div className="numeric-data" style={{
-              fontSize: '2.2rem',
-              color: getConfidenceColor(match.confidence),
-              lineHeight: 1
-            }}>
-              {(match.confidence * 100).toFixed(1)}%
-            </div>
-
-            {/* Dual-Band Threshold Meter: discard / review / confirmed zones */}
-            <div style={{ width: '100%', height: '8px', marginTop: '10px', position: 'relative', display: 'flex' }}>
-              {/* Zone bands, sized to their actual score ranges */}
-              <div style={{ width: '60%', height: '100%', backgroundColor: 'rgba(136, 146, 160, 0.18)', borderRight: '1px solid var(--bg-void)' }} title="Discard zone (<0.60)" />
-              <div style={{ width: '15%', height: '100%', backgroundColor: 'rgba(255, 184, 48, 0.18)', borderRight: '1px solid var(--bg-void)' }} title="Review zone (0.60–0.75)" />
-              <div style={{ width: '25%', height: '100%', backgroundColor: 'rgba(0, 217, 163, 0.18)' }} title="Confirmed zone (≥0.75)" />
-
-              {/* Filled progress indicating actual confidence score */}
-              <div style={{
-                position: 'absolute',
-                left: 0,
-                top: 0,
-                bottom: 0,
-                width: `${match.confidence * 100}%`,
-                backgroundColor: match.confidence >= 0.75
-                  ? 'var(--accent-signal)'
-                  : match.confidence >= 0.60
-                    ? 'var(--accent-amber)'
-                    : 'var(--accent-muted)',
-                opacity: 0.9,
-                transition: 'width 0.3s ease',
-              }} />
-
-              {/* Threshold divider lines at 60% and 75% */}
-              <div style={{
-                position: 'absolute',
-                left: '60%',
-                top: '-3px',
-                bottom: '-3px',
-                width: '2px',
-                backgroundColor: 'var(--text-primary)',
-                opacity: 0.6
-              }} title="Review Threshold (0.60)" />
-              <div style={{
-                position: 'absolute',
-                left: '75%',
-                top: '-3px',
-                bottom: '-3px',
-                width: '2px',
-                backgroundColor: 'var(--text-primary)',
-                opacity: 0.8
-              }} title="Confirmed Threshold (0.75)" />
-
-              {/* Current score marker */}
-              <div style={{
-                position: 'absolute',
-                left: `${match.confidence * 100}%`,
-                top: '-5px',
-                bottom: '-5px',
-                width: '2px',
-                backgroundColor: 'var(--text-primary)',
-                transform: 'translateX(-1px)',
-                transition: 'left 0.3s ease',
-              }} />
-            </div>
-            <div style={{
-              position: 'relative',
-              height: '14px',
-              marginTop: '4px',
-              fontSize: '0.6rem',
-              color: 'var(--text-secondary)',
-              fontFamily: "'IBM Plex Mono', monospace"
-            }}>
-              <span style={{ position: 'absolute', left: 0 }}>0%</span>
-              <span style={{ position: 'absolute', left: '60%', transform: 'translateX(-50%)' }}>60</span>
-              <span style={{ position: 'absolute', left: '75%', transform: 'translateX(-50%)' }}>75</span>
-              <span style={{ position: 'absolute', right: 0 }}>100%</span>
-            </div>
-            <div style={{
-              display: 'flex',
-              gap: '10px',
-              fontSize: '0.6rem',
-              color: 'var(--text-secondary)',
-              marginTop: '2px',
-              fontFamily: "'IBM Plex Mono', monospace"
-            }}>
-              <span>■ DISCARD</span>
-              <span style={{ color: 'var(--accent-amber)' }}>■ REVIEW</span>
-              <span style={{ color: 'var(--accent-signal)' }}>■ CONFIRMED</span>
-            </div>
+        {/* LSH & FAISS Telemetry Banner */}
+        <div style={{
+          backgroundColor: '#070A0E',
+          border: '1px solid var(--border-hairline)',
+          padding: '10px 14px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          fontFamily: "'IBM Plex Mono', monospace",
+          fontSize: '0.72rem',
+          color: 'var(--text-secondary)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Fingerprint size={14} color="var(--accent-signal)" />
+            <span>128-BIT LSH HASH SIGNATURE</span>
+            <span style={{ color: '#38bdf8' }}>{hashPreview.slice(0, 24)}...</span>
           </div>
+          <div>
+            HAMMING DIST: <strong style={{ color: 'var(--accent-signal)' }}>2 BITS (POPCOUNT)</strong>
+          </div>
+          <div>
+            ANN ENGINE: <strong style={{ color: '#a855f7' }}>FAISS HNSW GRAPH</strong>
+          </div>
+        </div>
 
-          <div style={{ marginBottom: '10px' }}>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>PERSON ID</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div className="mono-display" style={{ fontSize: '0.9rem' }}>{match.personId} ({match.name})</div>
-              <button
-                onClick={handleCopy}
-                aria-label="Copy person ID to clipboard"
-                title="Copy person ID"
-                style={{ background: 'none', border: 'none', color: copied ? 'var(--accent-signal)' : 'var(--text-secondary)', cursor: 'pointer', padding: 0, display: 'flex' }}
-              >
-                {copied ? <Check size={13} /> : <Copy size={13} />}
-              </button>
+        {/* Sighting History Section */}
+        {sightingHistory && sightingHistory.length > 1 && (
+          <div style={{ borderTop: '1px solid var(--border-hairline)', paddingTop: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', fontSize: '0.75rem', fontFamily: "'IBM Plex Mono', monospace", color: 'var(--text-secondary)' }}>
+              <History size={14} />
+              <span>SIGHTING TIMELINE ({sightingHistory.length} EVENTS)</span>
             </div>
-          </div>
-
-          <div style={{ marginBottom: '10px' }}>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>CHECKPOINT</div>
-            <div className="mono-display" style={{ fontSize: '0.9rem' }}>{cp?.name || match.checkpointId}</div>
-          </div>
-
-          <div style={{ marginBottom: '10px' }}>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>COORDINATES</div>
-            <div className="numeric-data" style={{ fontSize: '0.85rem' }}>
-              {cp ? `${cp.lat.toFixed(4)}°N, ${Math.abs(cp.lng).toFixed(4)}°${cp.lng < 0 ? 'W' : 'E'}` : '—'}
-            </div>
-          </div>
-
-          <div style={{ marginBottom: '16px' }}>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>TIMESTAMP (ISO)</div>
-            <div className="numeric-data" style={{ fontSize: '0.85rem' }}>{match.timestamp.toISOString()}</div>
-          </div>
-
-          <div style={{ marginBottom: '20px' }}>
-            <div style={{
-              fontSize: '0.7rem',
-              color: 'var(--text-secondary)',
-              marginBottom: '8px',
-              fontFamily: "'IBM Plex Mono', monospace",
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}>
-              <History size={12} /> SIGHTING HISTORY ({sightingHistory.length})
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              {sightingHistory.map(sighting => {
-                const sightingCp = CHECKPOINTS.find(c => c.id === sighting.checkpointId);
-                const isActive = sighting.id === match.id;
+            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
+              {sightingHistory.map((s, idx) => {
+                const isCurrent = s.id === match.id;
+                const sCp = CHECKPOINTS.find(c => c.id === s.checkpointId);
                 return (
-                  <button
-                    key={sighting.id}
-                    onClick={() => onSelectSighting(sighting.id)}
-                    aria-current={isActive}
+                  <div
+                    key={s.id}
+                    onClick={() => onSelectSighting(s.id)}
                     style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: '8px',
-                      width: '100%',
-                      textAlign: 'left',
-                      background: isActive ? 'var(--bg-panel-raised)' : 'transparent',
-                      border: '1px solid',
-                      borderColor: isActive ? 'var(--accent-signal)' : 'var(--border-hairline)',
-                      color: 'var(--text-primary)',
                       padding: '6px 10px',
+                      backgroundColor: isCurrent ? 'var(--bg-panel-raised)' : '#070A0E',
+                      border: `1px solid ${isCurrent ? 'var(--accent-signal)' : 'var(--border-hairline)'}`,
+                      borderRadius: '2px',
                       cursor: 'pointer',
+                      fontSize: '0.68rem',
                       fontFamily: "'IBM Plex Mono', monospace",
-                      fontSize: '0.7rem'
+                      minWidth: '130px'
                     }}
                   >
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {sightingCp?.name || sighting.checkpointId}
-                    </span>
-                    <span style={{ color: getConfidenceColor(sighting.confidence), flexShrink: 0 }}>
-                      {(sighting.confidence * 100).toFixed(0)}%
-                    </span>
-                  </button>
+                    <div style={{ color: isCurrent ? 'var(--accent-signal)' : 'var(--text-primary)', fontWeight: 600 }}>
+                      #{idx + 1} {sCp?.name || s.checkpointId}
+                    </div>
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.62rem' }}>
+                      {format(s.timestamp, 'HH:mm:ss')} ({(s.confidence * 100).toFixed(0)}%)
+                    </div>
+                  </div>
                 );
               })}
             </div>
           </div>
+        )}
 
-          {/* Action Buttons for Human-in-the-Loop Confirmation */}
-          <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {isPending ? (
-              <>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    className="button button-primary"
-                    style={{
-                      flex: 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                      padding: '8px',
-                      fontSize: '0.75rem',
-                      fontFamily: "'IBM Plex Mono', monospace"
-                    }}
-                    onClick={() => onConfirm(match.id)}
-                  >
-                    <CheckCircle size={14} /> Confirm
-                  </button>
-                  <button
-                    className="button button-danger"
-                    style={{
-                      flex: 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                      padding: '8px',
-                      fontSize: '0.75rem',
-                      fontFamily: "'IBM Plex Mono', monospace"
-                    }}
-                    onClick={() => onDismiss(match.id)}
-                  >
-                    <AlertTriangle size={14} /> Dismiss
-                  </button>
-                </div>
-                <button
-                  className="button button-amber"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    padding: '8px',
-                    fontSize: '0.75rem',
-                    fontFamily: "'IBM Plex Mono', monospace"
-                  }}
-                  onClick={() => onFlag(match.id)}
-                >
-                  <Flag size={14} /> Flag for Manual Review
-                </button>
-              </>
-            ) : (
-              <div style={{
-                padding: '10px',
-                border: '1px solid var(--border-hairline)',
-                width: '100%',
-                textAlign: 'center',
-                color: isConfirmed ? 'var(--accent-signal)' : 'var(--text-secondary)',
-                fontSize: '0.8rem',
-                fontFamily: "'IBM Plex Mono', monospace",
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px'
-              }}>
-                This match is {match.status}
-              </div>
-            )}
-          </div>
+        {/* Operator Review Actions */}
+        <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
+          {isPending ? (
+            <>
+              <button
+                onClick={() => onConfirm(match.id)}
+                style={{
+                  flex: 1,
+                  backgroundColor: 'var(--accent-signal)',
+                  color: '#0A0E14',
+                  border: 'none',
+                  padding: '10px 16px',
+                  fontWeight: 600,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  fontFamily: "'IBM Plex Mono', monospace"
+                }}
+              >
+                <CheckCircle size={15} />
+                CONFIRM MATCH
+              </button>
+
+              <button
+                onClick={() => onDismiss(match.id)}
+                style={{
+                  flex: 1,
+                  backgroundColor: 'transparent',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-hairline)',
+                  padding: '10px 16px',
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  fontFamily: "'IBM Plex Mono', monospace"
+                }}
+              >
+                <AlertTriangle size={15} />
+                DISMISS CANDIDATE
+              </button>
+
+              <button
+                onClick={() => onFlag(match.id)}
+                aria-label="Flag sighting for supervisor review"
+                title="Flag for supervisor review"
+                style={{
+                  backgroundColor: 'transparent',
+                  color: '#f59e0b',
+                  border: '1px solid #f59e0b',
+                  padding: '10px 14px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <Flag size={15} />
+              </button>
+            </>
+          ) : isConfirmed ? (
+            <div style={{
+              width: '100%',
+              padding: '10px',
+              backgroundColor: 'rgba(0, 217, 163, 0.1)',
+              border: '1px solid var(--accent-signal)',
+              color: 'var(--accent-signal)',
+              textAlign: 'center',
+              fontFamily: "'IBM Plex Mono', monospace",
+              fontSize: '0.8rem',
+              fontWeight: 600
+            }}>
+              MATCH SIGHTING CONFIRMED & LOGGED IN AUDIT LOG
+            </div>
+          ) : (
+            <div style={{
+              width: '100%',
+              padding: '10px',
+              backgroundColor: 'rgba(255, 71, 87, 0.1)',
+              border: '1px solid var(--accent-alert)',
+              color: 'var(--accent-alert)',
+              textAlign: 'center',
+              fontFamily: "'IBM Plex Mono', monospace",
+              fontSize: '0.8rem'
+            }}>
+              CANDIDATE SIGHTING DISMISSED
+            </div>
+          )}
         </div>
       </div>
     </div>

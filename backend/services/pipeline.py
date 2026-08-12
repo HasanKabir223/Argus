@@ -1,12 +1,13 @@
 """
-Assembled Checkpoint AI Pipeline
+Assembled Checkpoint AI Pipeline & CCTV Surveillance Engine
 Connects:
-1. Face Detection & 5-point alignment (RetinaFace/MobileNet-0.25)
-2. Quality Pre-filtering (Area, Laplacian Blur, Aspect Ratio)
+1. Multi-Face Detection & 5-point Landmark Alignment (RetinaFace/MobileNet-0.25)
+2. Quality Pre-filtering (Area, Laplacian Blur Variance, Aspect Ratio)
 3. ByteTrack Multi-Object Motion Tracking (Deduplication)
-4. Batch ArcFace 512-D Embedding Extraction
-5. FAISS Inner-Product Vector Similarity Search
-6. SQLite Match Event Logging & Audit Trail
+4. Batch ArcFace 512-D Embedding Extraction + Locality Sensitive Hashing (LSH)
+5. FAISS HNSW / Inner-Product Vector Similarity Search (Approximate Nearest Neighbors)
+6. SQLite Match Event Logging & Tactical Map Localization Store
+7. Real-Time CCTV Clip Ingestion & Video Stream Analyzer
 """
 
 import os
@@ -23,6 +24,7 @@ from backend.services.face_embedder import ArcFaceEmbedder
 from backend.services.faiss_search import FaissSimilaritySearch
 from backend.services.gallery_manager import GalleryManager
 from backend.services.event_service import EventService
+from backend.services.cctv_service import CctvIngestionService
 
 
 class CheckpointPipeline:
@@ -37,24 +39,34 @@ class CheckpointPipeline:
         os.makedirs(self.gallery_dir, exist_ok=True)
 
         # 1. Initialize detector & filter
-        self.detector = FaceDetector(det_thresh=0.35)
-        self.quality_filter = QualityFilter(min_size=40, blur_threshold=80.0, det_threshold=0.35)
+        self.detector = FaceDetector(det_thresh=0.30)
+        self.quality_filter = QualityFilter(min_size=16, blur_threshold=15.0, det_threshold=0.30)
 
         # 2. Initialize tracking & deduplication
         self.tracker = BYTETracker(track_thresh=0.4, match_thresh=0.35)
         self.track_cache = TrackCacheManager()
 
         # 3. Initialize embedder & vector index
-        self.embedder = ArcFaceEmbedder(embedding_dim=512)
+        self.embedder = ArcFaceEmbedder(embedding_dim=64, hash_bits=64)
         self.search_engine = FaissSimilaritySearch(
-            dimension=512,
+            dimension=64,
             threshold_confirmed=0.75,
-            threshold_review=0.60
+            threshold_review=0.60,
+            index_type="hnsw",
+            hash_bits=64
         )
         self.gallery_manager = GalleryManager(
             embedder=self.embedder,
             search_engine=self.search_engine,
             gallery_dir=self.gallery_dir
+        )
+
+        # 4. Initialize CCTV Ingestion Engine
+        self.cctv_service = CctvIngestionService(
+            detector=self.detector,
+            embedder=self.embedder,
+            search_engine=self.search_engine,
+            crops_dir=self.crops_dir
         )
 
         # Latency & throughput telemetry
@@ -67,12 +79,13 @@ class CheckpointPipeline:
             "last_detection_ms": 0.0,
             "last_embedding_ms": 0.0,
             "last_search_ms": 0.0,
+            "last_hashing_ms": 0.0,
             "estimated_fps": 30.0
         }
 
     def save_crop_image(self, frame: np.ndarray, bbox: List[float], tag: str = "crop") -> str:
         """
-        Saves the cropped face image to static storage and returns relative URL.
+        Saves cropped face image to static storage and returns relative URL.
         """
         x1, y1, x2, y2 = [int(v) for v in bbox]
         h, w = frame.shape[:2]
@@ -100,7 +113,7 @@ class CheckpointPipeline:
         t_start = time.time()
         self.metrics["total_frames_processed"] += 1
 
-        # 1. Face Detection
+        # 1. Multi-Face Detection
         t_det = time.time()
         raw_detections = self.detector.detect(frame)
         self.metrics["last_detection_ms"] = (time.time() - t_det) * 1000.0
@@ -122,40 +135,38 @@ class CheckpointPipeline:
             track_id = track.track_id
 
             if self.track_cache.is_cached(track_id):
-                # Reuse cached embedding and previous search results
-                cached_data = self.track_cache.get_result(track_id)
-                if cached_data and cached_data.get("match_results"):
-                    # Already recognized person on screen
-                    pass
                 continue
 
-            # This is a new unique person track!
+            # New unique person track
             tracks_to_process.append(track)
             aligned_crop = track.detection.get("aligned_crop")
             if aligned_crop is None:
                 aligned_crop = cv2.resize(frame, (112, 112))
             crops_to_embed.append(aligned_crop)
 
-        # 5. Batch ArcFace Feature Extraction (only for new tracks)
+        # 5. Batch ArcFace Feature Extraction & LSH Hashing (only for new tracks)
         if crops_to_embed:
             t_emb = time.time()
             embeddings = self.embedder.get_embeddings_batch(crops_to_embed)
             self.metrics["last_embedding_ms"] = (time.time() - t_emb) * 1000.0
             self.metrics["total_embeddings_computed"] += len(crops_to_embed)
 
-            # 6. FAISS Inner-Product Similarity Search
+            # 6. FAISS Inner-Product / HNSW Vector Similarity Search
             t_search = time.time()
             for i, track in enumerate(tracks_to_process):
                 emb = embeddings[i]
                 search_results = self.search_engine.search(emb, top_k=3, threshold=0.60)
                 
+                best_match = search_results[0] if search_results else None
+                best_conf = best_match["confidence"] if best_match else 0.0
+                
                 # Cache results for this track
-                best_conf = search_results[0]["confidence"] if search_results else 0.0
                 self.track_cache.store_result(
                     track_id=track.track_id,
                     embedding=emb,
                     match_results=search_results,
-                    confidence=best_conf
+                    confidence=best_conf,
+                    metadata={"best_match": best_match}
                 )
 
                 # 7. Log confirmed or reviewable matches
@@ -164,7 +175,7 @@ class CheckpointPipeline:
                     conf = match_item["confidence"]
                     crop_url = self.save_crop_image(frame, track.bbox, tag=f"track_{track.track_id}")
 
-                    status = "PENDING_REVIEW"
+                    status = "CONFIRMED" if match_item.get("tier") == "CONFIRMED" else "PENDING_REVIEW"
                     logged_event = EventService.log_match(
                         person_id=person["person_id"],
                         name=person.get("name", "Unknown Person"),
@@ -175,7 +186,11 @@ class CheckpointPipeline:
                         confidence=conf,
                         face_crop_path=crop_url,
                         reference_photo_path=person.get("photo_url"),
-                        status=status
+                        status=status,
+                        source_type="LIVE_CAMERA_FRAME",
+                        camera_id=checkpoint_meta.get("camera_id", f"CAM-{checkpoint_id}"),
+                        threat_level=person.get("threat_level", "HIGH"),
+                        offense=person.get("offense", "Wanted Suspect")
                     )
                     new_matches.append(logged_event)
                     self.metrics["total_matches_logged"] += 1

@@ -24,3 +24,20 @@ dist-ssr
 *.sw?
 __pycache__/
 *.pyc
+
+
+
+# Generated Static Face Crops & Galleries
+backend/static/crops/
+backend/static/gallery/
+backend/static/cctv/
+backend/static/watchlist/
+
+
+
+
+# SQLite Databases & Lock Files
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
