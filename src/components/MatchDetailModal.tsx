@@ -27,6 +27,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
   onConfirm,
   onDismiss,
   onFlag,
+  onDeleteMatch,
   onSelectSighting,
 }) => {
   const cp = CHECKPOINTS.find(c => c.id === match.checkpointId);

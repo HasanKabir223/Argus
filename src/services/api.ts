@@ -3,7 +3,7 @@
  * Connects the React dashboard to the FastAPI AI Services & CCTV Ingestion Layer.
  */
 
-const API_BASE = "http://localhost:8000/api";
+const API_BASE = "/api";
 
 export interface BackendEvent {
   id: string | number;
@@ -388,13 +388,9 @@ export async function enrollReferencePerson(formData: FormData): Promise<Referen
 
 export async function deleteReferencePerson(personId: string): Promise<boolean> {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
     const res = await fetch(`${API_BASE}/reference-persons/${personId}`, {
-      method: "DELETE",
-      signal: controller.signal
+      method: "DELETE"
     });
-    clearTimeout(timeoutId);
     return res.ok;
   } catch (err) {
     console.warn(`Backend delete failed, performing local removal for ${personId}:`, err);
@@ -448,4 +444,222 @@ export function getPhotoUrl(pathOrUrl?: string): string {
 }
 
 
+export interface StreamCrop {
+  track_id: number;
+  crop_url: string;
+  timestamp_sec: number;
+  bbox: number[];
+  norm_box: number[];
+  det_score: number;
+  frame_idx: number;
+  total_crops_so_far: number;
+}
+
+export interface StreamPhaseStart {
+  phase: number;
+  message: string;
+  total_frames?: number;
+  duration_sec?: number;
+  resolution?: string;
+  unique_faces?: number;
+}
+
+export interface StreamPhase1Complete {
+  total_unique_faces: number;
+  total_frames_scanned: number;
+  total_detections: number;
+  phase1_time_sec: number;
+  avg_detection_ms: number;
+}
+
+export interface StreamMatch {
+  match: CctvMatch;
+  crop_url: string;
+  total_matches_so_far: number;
+}
+
+/**
+ * Uploads a CCTV clip and streams two-phase processing results via SSE.
+ * Phase 1: Face detection → instant crop previews
+ * Phase 2: Embedding extraction → FAISS watchlist matching
+ *
+ * Returns an AbortController to allow cancellation.
+ */
+export function uploadCctvClipStreaming(
+  file: File,
+  checkpointId: string,
+  callbacks: {
+    onPhaseStart?: (data: StreamPhaseStart) => void;
+    onCrop?: (crop: StreamCrop) => void;
+    onPhase1Complete?: (data: StreamPhase1Complete) => void;
+    onMatch?: (data: StreamMatch) => void;
+    onSummary?: (result: CctvProcessResult) => void;
+    onError?: (message: string) => void;
+  }
+): AbortController {
+  const controller = new AbortController();
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("checkpoint_id", checkpointId);
+  formData.append("camera_id", "CAM-UPLOAD [TACTICAL UPLOAD]");
+  formData.append("frame_stride", "3");
+
+  (async () => {
+    try {
+      const response = await fetch(`${API_BASE}/cctv/upload-clip-stream`, {
+        method: "POST",
+        body: formData,
+        signal: controller.signal,
+      });
+
+      if (!response.ok || !response.body) {
+        callbacks.onError?.(`HTTP ${response.status}: ${response.statusText}`);
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Parse SSE events: lines starting with "data: "
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // keep incomplete last line in buffer
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
+
+          try {
+            const jsonStr = trimmed.slice(6); // remove "data: " prefix
+            const event = JSON.parse(jsonStr);
+
+            switch (event.type) {
+              case 'phase_start':
+                callbacks.onPhaseStart?.(event);
+                break;
+              case 'phase1_crop':
+                callbacks.onCrop?.(event);
+                break;
+              case 'phase1_complete':
+                callbacks.onPhase1Complete?.(event);
+                break;
+              case 'phase2_match':
+                callbacks.onMatch?.(event);
+                break;
+              case 'summary':
+                callbacks.onSummary?.(event as CctvProcessResult);
+                break;
+              case 'error':
+                callbacks.onError?.(event.message);
+                break;
+            }
+          } catch {
+            // Skip malformed JSON lines
+          }
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        console.warn("CCTV streaming upload failed:", err);
+        callbacks.onError?.(err.message || "Streaming connection failed");
+      }
+    }
+  })();
+
+  return controller;
+}
+
+/**
+ * Runs two-phase streaming analysis on an existing CCTV catalog clip via SSE.
+ */
+export function processCctvClipStreaming(
+  clipId: string,
+  callbacks: {
+    onPhaseStart?: (data: StreamPhaseStart) => void;
+    onCrop?: (crop: StreamCrop) => void;
+    onPhase1Complete?: (data: StreamPhase1Complete) => void;
+    onMatch?: (data: StreamMatch) => void;
+    onSummary?: (result: CctvProcessResult) => void;
+    onError?: (message: string) => void;
+  }
+): AbortController {
+  const controller = new AbortController();
+
+  (async () => {
+    try {
+      const response = await fetch(`${API_BASE}/cctv/process-clip-stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clip_id: clipId, frame_stride: 3, confidence_threshold: 0.60 }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok || !response.body) {
+        callbacks.onError?.(`HTTP ${response.status}: ${response.statusText}`);
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
+
+          try {
+            const jsonStr = trimmed.slice(6);
+            const event = JSON.parse(jsonStr);
+
+            switch (event.type) {
+              case 'phase_start':
+                callbacks.onPhaseStart?.(event);
+                break;
+              case 'phase1_crop':
+                callbacks.onCrop?.(event);
+                break;
+              case 'phase1_complete':
+                callbacks.onPhase1Complete?.(event);
+                break;
+              case 'phase2_match':
+                callbacks.onMatch?.(event);
+                break;
+              case 'summary':
+                callbacks.onSummary?.(event as CctvProcessResult);
+                break;
+              case 'error':
+                callbacks.onError?.(event.message);
+                break;
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        console.warn("CCTV streaming process failed:", err);
+        callbacks.onError?.(err.message || "Streaming connection failed");
+      }
+    }
+  })();
+
+  return controller;
+}
 

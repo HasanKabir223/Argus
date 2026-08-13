@@ -2,8 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { CHECKPOINTS, type Match } from '../data/mockData';
-import 'leaflet/dist/leaflet.css';
-import { Crosshair, Layers, Navigation, ShieldAlert, Sparkles, UserCheck, Globe, MapPin } from 'lucide-react';
+import { Layers, Sparkles, UserCheck, Globe } from 'lucide-react';
 
 interface MapViewProps {
   matches: Match[];
@@ -128,7 +127,7 @@ function createCheckpointIcon(status: 'alert' | 'confirmed' | 'idle', name: stri
   });
 }
 
-function createSuspectSightingIcon(match: Match, isSelected: boolean, orderIndex?: number, isTrajectory?: boolean) {
+function createSuspectSightingIcon(match: Match, _isSelected: boolean, orderIndex?: number, isTrajectory?: boolean) {
   const isConfirmed = match.status === 'CONFIRMED';
   const ringColor = isConfirmed ? '#00D9A3' : '#FF4757';
   const imgUrl = match.faceCropUrl || match.referencePhotoUrl || 'http://localhost:8000/static/gallery/placeholder.jpg';

@@ -15,6 +15,7 @@ interface TopBarProps {
   onOpenAuditLog: () => void;
   onOpenShortcuts: () => void;
   onOpenCctvStudio: () => void;
+  onOpenCctvIngestion?: () => void;
   onOpenWatchlist: () => void;
   viewMode: 'globe' | 'map';
   onToggleViewMode: () => void;
@@ -29,6 +30,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenAuditLog,
   onOpenShortcuts,
   onOpenCctvStudio,
+  onOpenCctvIngestion,
   onOpenWatchlist,
   viewMode,
   onToggleViewMode,
@@ -175,6 +177,26 @@ export const TopBar: React.FC<TopBarProps> = ({
 
       {/* Action Controls & Navigation */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+        {/* Launch CCTV Ingestion Feature */}
+        {onOpenCctvIngestion && (
+          <button
+            onClick={onOpenCctvIngestion}
+            aria-label="Open CCTV video ingestion feature"
+            title="Open CCTV video ingestion feature"
+            className="topbar-btn"
+            style={{
+              ...iconButtonStyle,
+              backgroundColor: 'rgba(0, 217, 163, 0.2)',
+              borderColor: 'var(--accent-signal)',
+              color: 'var(--accent-signal)',
+              fontWeight: 600,
+            }}
+          >
+            <Video size={13} />
+            INGEST CCTV
+          </button>
+        )}
+
         {/* Launch CCTV Surveillance Studio */}
         <button
           onClick={onOpenCctvStudio}
@@ -183,10 +205,9 @@ export const TopBar: React.FC<TopBarProps> = ({
           className="topbar-btn"
           style={{
             ...iconButtonStyle,
-            backgroundColor: 'rgba(0, 217, 163, 0.15)',
-            borderColor: 'var(--accent-signal)',
-            color: 'var(--accent-signal)',
-            fontWeight: 600
+            backgroundColor: 'rgba(0, 217, 163, 0.08)',
+            borderColor: 'var(--border-hairline)',
+            color: 'var(--text-primary)',
           }}
         >
           <Video size={13} />

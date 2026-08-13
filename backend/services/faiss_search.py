@@ -230,27 +230,6 @@ class FaissSimilaritySearch:
 
 
 
-    def store_footage_embedding(self, embedding: np.ndarray, meta: Dict[str, Any]) -> int:
-        """
-        Stores a detected CCTV footage face embedding into the footage FAISS vector index.
-        """
-        emb = embedding.reshape(1, self.dimension).astype(np.float32)
-        norm = np.linalg.norm(emb)
-        if norm > 0:
-            emb = emb / norm
-
-        if self._footage_embeddings is None or len(self._footage_embeddings) == 0:
-            self._footage_embeddings = emb
-        else:
-            self._footage_embeddings = np.vstack([self._footage_embeddings, emb])
-
-        self._footage_metadata.append(meta)
-
-        if HAS_FAISS and self._footage_index is not None:
-            self._footage_index.add(emb)
-
-        return len(self._footage_metadata) - 1
-
     def get_footage_count(self) -> int:
         """
         Returns total number of CCTV footage face vectors indexed in FAISS.

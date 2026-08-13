@@ -4,11 +4,13 @@ FastAPI Routes for Checkpoint AI Services, CCTV Ingestion & Operations Dashboard
 
 import os
 import time
+import json
 import cv2
 import shutil
 from datetime import datetime
 import numpy as np
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 
@@ -315,6 +317,64 @@ def process_cctv_clip(req: CctvProcessRequest):
     return results
 
 
+@router.post("/cctv/process-clip-stream")
+def process_cctv_clip_streaming_endpoint(req: CctvProcessRequest):
+    """
+    Two-phase streaming processing for an existing CCTV video in catalog via SSE.
+    """
+    pipe = get_pipeline()
+    clips = pipe.cctv_service.get_available_clips()
+
+    chosen_clip = None
+    if req.clip_id:
+        chosen_clip = next((c for c in clips if c["id"] == req.clip_id), None)
+    if not chosen_clip and req.filename:
+        chosen_clip = next((c for c in clips if c["filename"] == req.filename), None)
+    if not chosen_clip and req.checkpoint_id:
+        chosen_clip = next((c for c in clips if c["checkpoint_id"] == req.checkpoint_id), None)
+    if not chosen_clip:
+        chosen_clip = clips[0] if clips else None
+
+    if not chosen_clip:
+        raise HTTPException(status_code=404, detail="No CCTV surveillance clips found")
+
+    from backend.services.cctv_service import _get_cctv_storage_dirs
+    storage_dirs = _get_cctv_storage_dirs()
+    video_path = None
+    for sdir in storage_dirs:
+        candidate = os.path.join(sdir, chosen_clip["filename"])
+        if os.path.exists(candidate):
+            video_path = candidate
+            break
+
+    if not video_path:
+        raise HTTPException(status_code=404, detail=f"Video file not found: {chosen_clip['filename']}")
+
+    def event_generator():
+        for event in pipe.cctv_service.process_cctv_clip_streaming(
+            video_path=video_path,
+            checkpoint_id=chosen_clip["checkpoint_id"],
+            checkpoint_name=chosen_clip["checkpoint_name"],
+            lat=chosen_clip["lat"],
+            lng=chosen_clip["lng"],
+            camera_id=chosen_clip["camera_id"],
+            frame_stride=req.frame_stride or 3,
+            confidence_threshold=req.confidence_threshold or 0.60
+        ):
+            yield f"data: {json.dumps(event, default=str)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+
 @router.post("/cctv/upload-clip")
 async def upload_and_process_cctv_clip(
     checkpoint_id: str = Form("cp-01"),
@@ -353,6 +413,59 @@ async def upload_and_process_cctv_clip(
     )
     results["video_metadata"]["url"] = f"/static/cctv/{safe_filename}"
     return results
+
+
+@router.post("/cctv/upload-clip-stream")
+async def upload_and_process_cctv_clip_streaming(
+    checkpoint_id: str = Form("cp-01"),
+    camera_id: str = Form("CAM-CUSTOM [TACTICAL FIELD UPLOAD]"),
+    frame_stride: int = Form(3),
+    file: UploadFile = File(...)
+):
+    """
+    Two-phase streaming CCTV ingestion endpoint.
+    Returns Server-Sent Events (SSE) progressively:
+      - phase1_crop: Each detected face crop (instant preview)
+      - phase2_match: Each watchlist match result
+      - summary: Final aggregated telemetry
+    """
+    pipe = get_pipeline()
+    from backend.services.cctv_service import _get_cctv_storage_dirs
+    cctv_dir = _get_cctv_storage_dirs()[0]
+    os.makedirs(cctv_dir, exist_ok=True)
+
+    safe_filename = f"upload_{int(time.time())}_{file.filename}"
+    out_path = os.path.join(cctv_dir, safe_filename)
+
+    with open(out_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    cps = EventService.get_checkpoints()
+    cp_meta = next((c for c in cps if c["id"] == checkpoint_id), {"name": "Field Checkpoint", "lat": 40.7527, "lng": -73.9772})
+
+    def event_generator():
+        for event in pipe.cctv_service.process_cctv_clip_streaming(
+            video_path=out_path,
+            checkpoint_id=checkpoint_id,
+            checkpoint_name=cp_meta["name"],
+            lat=cp_meta["lat"],
+            lng=cp_meta["lng"],
+            camera_id=camera_id,
+            frame_stride=frame_stride,
+            confidence_threshold=0.60
+        ):
+            # SSE format: data: {json}\n\n
+            yield f"data: {json.dumps(event, default=str)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 
 @router.post("/pipeline/submit-photo")
@@ -487,3 +600,61 @@ def trigger_simulation_sighting(req: SimulationTriggerRequest):
         "status": "SIMULATED_MATCH_LOGGED",
         "event": event
     }
+
+
+# ─── CCTV INGESTION FEATURE SPEC ENDPOINTS ──────────────────────────────────────
+
+from backend.services.ingest_job_service import get_ingest_service
+from backend.services.cctv_service import _get_cctv_storage_dirs
+
+
+@router.post("/ingest/upload")
+async def ingest_upload_video(video: UploadFile = File(...)):
+    """
+    Accepts multipart/form-data with field 'video'.
+    Stores file and initiates background frame-by-frame processing.
+    Returns: { "job_id": "..." }
+    """
+    ingest_svc = get_ingest_service()
+    job_id = ingest_svc.create_job()
+
+    cctv_dir = _get_cctv_storage_dirs()[0]
+    os.makedirs(cctv_dir, exist_ok=True)
+    saved_filename = f"job_{job_id}_{video.filename}"
+    saved_path = os.path.join(cctv_dir, saved_filename)
+
+    with open(saved_path, "wb") as f:
+        shutil.copyfileobj(video.file, f)
+
+    ingest_svc.start_background_processing(job_id, saved_path)
+    return {"job_id": job_id}
+
+
+@router.get("/ingest/status/{job_id}")
+def get_ingest_job_status(job_id: str):
+    """
+    Returns the real-time processing status of the ingestion job:
+    {
+      "job_id": "abc123",
+      "status": "processing" | "done" | "error",
+      "progress": 0.0 to 1.0,
+      "stage": "detecting" | "tracking" | "embedding" | "indexing" | "done",
+      "persons": [
+        {
+          "track_id": "TRACK-001",
+          "best_crop_url": "/crops/TRACK-001.jpg",
+          "first_frame": 42,
+          "total_frames": 18,
+          "embedding_stored": true
+        }
+      ],
+      "total_persons": 5,
+      "error_message": null
+    }
+    """
+    ingest_svc = get_ingest_service()
+    status = ingest_svc.get_job_status(job_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail=f"Ingestion job '{job_id}' not found")
+    return status
+

@@ -2,15 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Shield, Plus, Upload, X, Search, RefreshCw,
   Trash2, Eye, AlertTriangle, Check, Fingerprint,
-  MapPin, Scan, ShieldAlert, FileText, Terminal,
-  Cpu, Zap, Clock, CheckCircle2, ChevronDown, ChevronUp, Image as ImageIcon
+  MapPin, Terminal,
+  Zap, ChevronDown, ChevronUp, Image as ImageIcon,
+  ZoomIn, ZoomOut, UserPlus
 } from 'lucide-react';
 import {
   fetchReferencePersons, enrollReferencePerson, syncWatchlist,
   deleteReferencePerson, getPhotoUrl,
   type ReferencePerson
 } from '../services/api';
-import { DEFAULT_WATCHLIST_PERSONS } from '../data/mockData';
 
 interface WatchlistGalleryModalProps {
   onClose: () => void;
@@ -117,8 +117,9 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
   const [showLogsHUD, setShowLogsHUD] = useState<boolean>(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  // Detailed Preview Lightbox Target
+  // Detailed Preview Lightbox Target & Zoom State
   const [previewTarget, setPreviewTarget] = useState<ReferencePerson | null>(null);
+  const [previewZoom, setPreviewZoom] = useState<number>(1.0);
 
   // Target ID queued for delete confirmation
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<ReferencePerson | null>(null);
@@ -157,31 +158,9 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
 
   const loadPersons = async () => {
     const backendList = await fetchReferencePersons();
-    const cached = getCachedPersons();
-
-    const map = new Map<string, ReferencePerson>();
-    // Seed defaults first so they always appear as a baseline
-    DEFAULT_WATCHLIST_PERSONS.forEach(p => map.set(p.person_id, {
-      person_id: p.person_id,
-      name: p.name,
-      photo_url: p.photo_url,
-      photo_path: p.photo_path,
-      age: p.age,
-      last_seen: p.last_seen,
-      category: p.category,
-      threat_level: p.threat_level,
-      offense: p.offense,
-      case_id: p.case_id,
-      warrant_status: p.warrant_status,
-    }));
-    // Layer cached data on top (overrides defaults for matching IDs)
-    cached.forEach(p => map.set(p.person_id, p));
-    // Layer backend data on top (highest priority)
-    backendList.forEach(p => map.set(p.person_id, p));
-
-    const merged = Array.from(map.values());
-    setPersons(merged);
-    addLog(`[GALLERY] Loaded ${merged.length} target dossiers from SQLite and FAISS.`);
+    const list = backendList || [];
+    setPersons(list);
+    addLog(`[GALLERY] Loaded ${list.length} target dossiers from SQLite and FAISS database.`);
   };
 
   const showTemporaryNotice = (msg: string) => {
@@ -868,201 +847,310 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                 </div>
               </div>
 
-              {/* Cards Grid */}
-              <div style={{
-                flex: 1,
-                overflowY: 'auto',
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-                gap: '16px',
-                paddingRight: '4px'
-              }}>
-                {filtered.map(p => {
-                  const isCritical = p.threat_level === 'CRITICAL';
-                  const isHigh = p.threat_level === 'HIGH';
-                  const threatColor = isCritical ? 'var(--accent-alert)' : isHigh ? '#f59e0b' : '#38bdf8';
-                  const photoSrc = getPhotoUrl(p.photo_url || p.photo_path);
-
-                  return (
-                    <div
-                      key={p.person_id}
+              {/* Empty State when no criminals in watchlist */}
+              {filtered.length === 0 && (
+                <div style={{
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '40px 20px',
+                  textAlign: 'center',
+                  backgroundColor: 'var(--bg-panel)',
+                  border: '1px dashed var(--border-hairline)'
+                }}>
+                  <div style={{
+                    width: '64px',
+                    height: '64px',
+                    borderRadius: '50%',
+                    backgroundColor: 'rgba(0, 217, 163, 0.08)',
+                    border: '1px solid rgba(0, 217, 163, 0.25)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: '16px'
+                  }}>
+                    <Shield size={32} color="var(--accent-signal)" />
+                  </div>
+                  <h3 className="mono-display" style={{ fontSize: '1.05rem', color: 'var(--text-primary)', marginBottom: '8px' }}>
+                    {persons.length === 0 ? 'WATCHLIST DATABASE IS EMPTY' : 'NO TARGETS MATCHING QUERY'}
+                  </h3>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', maxWidth: '440px', lineHeight: 1.5, marginBottom: '20px' }}>
+                    {persons.length === 0
+                      ? 'All hardcoded mock data has been purged. Enroll a new criminal target or sync reference images to index biometric vectors into SQLite & FAISS.'
+                      : `No enrolled suspects match '${query}'. Try searching by another name, ID, or threat category.`}
+                  </p>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <button
+                      onClick={() => setShowEnrollForm(true)}
                       style={{
-                        backgroundColor: 'var(--bg-panel)',
-                        border: '1px solid var(--border-hairline)',
                         display: 'flex',
-                        flexDirection: 'column',
-                        overflow: 'hidden',
-                        borderRadius: '2px',
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
-                        transition: 'border-color 0.15s ease, transform 0.15s ease',
-                        position: 'relative'
+                        alignItems: 'center',
+                        gap: '8px',
+                        backgroundColor: 'var(--accent-signal)',
+                        color: '#0A0E14',
+                        border: 'none',
+                        padding: '10px 18px',
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        fontWeight: 700,
+                        fontSize: '0.8rem',
+                        cursor: 'pointer'
                       }}
-                      onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(0, 217, 163, 0.4)')}
-                      onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-hairline)')}
                     >
-                      {/* Photo Header Container */}
-                      <div
-                        style={{
-                          width: '100%',
-                          height: '160px',
-                          backgroundColor: '#04070A',
-                          position: 'relative',
-                          overflow: 'hidden',
-                          cursor: 'pointer'
+                      <UserPlus size={16} /> ENROLL NEW SUSPECT
+                    </button>
+                    {persons.length === 0 && (
+                      <button
+                        onClick={async () => {
+                          setIsSyncing(true);
+                          addLog('[SYNC] Syncing WatchList folder with SQLite and FAISS...');
+                          await syncWatchlist();
+                          await loadPersons();
+                          setIsSyncing(false);
+                          showTemporaryNotice('Watchlist synchronized with filesystem and FAISS index');
                         }}
-                        onClick={() => setPreviewTarget(p)}
-                        title="Click to preview full dossier"
-                      >
-                        {/* Image with fallback */}
-                        <TargetImage photoUrl={photoSrc} name={p.name} />
-
-                        {/* Optical Reticle Lines */}
-                        <div style={{ position: 'absolute', top: '8px', left: '8px', width: '12px', height: '12px', borderTop: '2px solid rgba(0, 217, 163, 0.6)', borderLeft: '2px solid rgba(0, 217, 163, 0.6)', pointerEvents: 'none' }} />
-                        <div style={{ position: 'absolute', top: '8px', right: '8px', width: '12px', height: '12px', borderTop: '2px solid rgba(0, 217, 163, 0.6)', borderRight: '2px solid rgba(0, 217, 163, 0.6)', pointerEvents: 'none' }} />
-                        <div style={{ position: 'absolute', bottom: '8px', left: '8px', width: '12px', height: '12px', borderBottom: '2px solid rgba(0, 217, 163, 0.6)', borderLeft: '2px solid rgba(0, 217, 163, 0.6)', pointerEvents: 'none' }} />
-                        <div style={{ position: 'absolute', bottom: '8px', right: '8px', width: '12px', height: '12px', borderBottom: '2px solid rgba(0, 217, 163, 0.6)', borderRight: '2px solid rgba(0, 217, 163, 0.6)', pointerEvents: 'none' }} />
-
-                        {/* Threat Level Badge */}
-                        <div style={{
-                          position: 'absolute',
-                          top: '8px',
-                          right: '8px',
-                          backgroundColor: 'rgba(10, 14, 20, 0.92)',
-                          border: `1px solid ${threatColor}`,
-                          color: threatColor,
-                          padding: '2px 7px',
-                          fontSize: '0.65rem',
-                          fontFamily: "'IBM Plex Mono', monospace",
-                          fontWeight: 700,
-                          zIndex: 2
-                        }}>
-                          {p.threat_level || 'HIGH'}
-                        </div>
-
-                        {/* Hover Preview Indicator */}
-                        <div style={{
-                          position: 'absolute',
-                          bottom: 0,
-                          left: 0,
-                          right: 0,
-                          backgroundColor: 'rgba(10, 14, 20, 0.85)',
-                          borderTop: '1px solid var(--border-hairline)',
-                          padding: '4px 8px',
+                        disabled={isSyncing}
+                        style={{
                           display: 'flex',
                           alignItems: 'center',
-                          justifyContent: 'space-between',
-                          fontSize: '0.65rem',
+                          gap: '8px',
+                          backgroundColor: 'var(--bg-panel-raised)',
+                          color: 'var(--text-primary)',
+                          border: '1px solid var(--border-hairline)',
+                          padding: '10px 18px',
                           fontFamily: "'IBM Plex Mono', monospace",
-                          color: 'var(--accent-signal)'
-                        }}>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <Scan size={11} /> MUGSHOT DOSSIER
-                          </span>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: 'var(--text-secondary)' }}>
-                            <Eye size={11} /> PREVIEW
-                          </span>
-                        </div>
-                      </div>
+                          fontSize: '0.8rem',
+                          cursor: isSyncing ? 'wait' : 'pointer'
+                        }}
+                      >
+                        <RefreshCw size={15} className={isSyncing ? 'spinning' : ''} />
+                        SYNC DISK PROFILES
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
-                      {/* Metadata Content */}
-                      <div style={{ padding: '12px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                        <div>
-                          <div className="mono-display" style={{ fontSize: '0.92rem', color: 'var(--text-primary)', marginBottom: '2px' }}>
-                            {p.name}
-                          </div>
-                          <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace", marginBottom: '6px' }}>
-                            ID: {p.person_id}
-                          </div>
-                          <div style={{
-                            fontSize: '0.72rem',
-                            color: 'var(--text-primary)',
-                            marginBottom: '10px',
-                            lineHeight: 1.35,
-                            height: '34px',
+              {/* Cards Grid */}
+              {filtered.length > 0 && (
+                <div style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                  gap: '16px',
+                  paddingRight: '4px'
+                }}>
+                  {filtered.map(p => {
+                    const isCritical = p.threat_level === 'CRITICAL';
+                    const isHigh = p.threat_level === 'HIGH';
+                    const threatColor = isCritical ? 'var(--accent-alert)' : isHigh ? '#f59e0b' : '#38bdf8';
+                    const photoSrc = getPhotoUrl(p.photo_url || p.photo_path);
+
+                    return (
+                      <div
+                        key={p.person_id}
+                        style={{
+                          backgroundColor: 'var(--bg-panel)',
+                          border: '1px solid var(--border-hairline)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          overflow: 'hidden',
+                          borderRadius: '2px',
+                          boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
+                          transition: 'border-color 0.15s ease, transform 0.15s ease',
+                          position: 'relative'
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(0, 217, 163, 0.4)')}
+                        onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-hairline)')}
+                      >
+                        {/* Photo Header Container with Interactive Image Preview */}
+                        <div
+                          style={{
+                            width: '100%',
+                            height: '160px',
+                            backgroundColor: '#04070A',
+                            position: 'relative',
                             overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical'
-                          }}>
-                            {p.offense || 'Active Criminal Warrant'}
-                          </div>
-                        </div>
+                            cursor: 'pointer'
+                          }}
+                          onClick={() => {
+                            setPreviewZoom(1.0);
+                            setPreviewTarget(p);
+                          }}
+                          title="Click to preview full-size mugshot and dossier"
+                        >
+                          {/* Image with fallback */}
+                          <TargetImage photoUrl={photoSrc} name={p.name} />
 
-                        <div>
-                          {/* FAISS Index Tag */}
+                          {/* Optical Reticle Lines */}
+                          <div style={{ position: 'absolute', top: '8px', left: '8px', width: '12px', height: '12px', borderTop: '2px solid rgba(0, 217, 163, 0.6)', borderLeft: '2px solid rgba(0, 217, 163, 0.6)', pointerEvents: 'none' }} />
+                          <div style={{ position: 'absolute', top: '8px', right: '8px', width: '12px', height: '12px', borderTop: '2px solid rgba(0, 217, 163, 0.6)', borderRight: '2px solid rgba(0, 217, 163, 0.6)', pointerEvents: 'none' }} />
+                          <div style={{ position: 'absolute', bottom: '8px', left: '8px', width: '12px', height: '12px', borderBottom: '2px solid rgba(0, 217, 163, 0.6)', borderLeft: '2px solid rgba(0, 217, 163, 0.6)', pointerEvents: 'none' }} />
+                          <div style={{ position: 'absolute', bottom: '8px', right: '8px', width: '12px', height: '12px', borderBottom: '2px solid rgba(0, 217, 163, 0.6)', borderRight: '2px solid rgba(0, 217, 163, 0.6)', pointerEvents: 'none' }} />
+
+                          {/* Threat Level Badge */}
                           <div style={{
-                            fontSize: '0.64rem',
+                            position: 'absolute',
+                            top: '8px',
+                            right: '8px',
+                            backgroundColor: 'rgba(10, 14, 20, 0.92)',
+                            border: `1px solid ${threatColor}`,
+                            color: threatColor,
+                            padding: '2px 7px',
+                            fontSize: '0.65rem',
                             fontFamily: "'IBM Plex Mono', monospace",
-                            color: 'var(--accent-signal)',
-                            backgroundColor: 'rgba(0, 217, 163, 0.08)',
-                            padding: '4px 6px',
-                            border: '1px solid rgba(0, 217, 163, 0.2)',
-                            marginBottom: '10px',
+                            fontWeight: 700,
+                            zIndex: 2
+                          }}>
+                            {p.threat_level || 'HIGH'}
+                          </div>
+
+                          {/* Hover Preview Indicator */}
+                          <div style={{
+                            position: 'absolute',
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            backgroundColor: 'rgba(10, 14, 20, 0.85)',
+                            borderTop: '1px solid var(--border-hairline)',
+                            padding: '4px 8px',
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'space-between'
+                            justifyContent: 'space-between',
+                            fontSize: '0.65rem',
+                            fontFamily: "'IBM Plex Mono', monospace",
+                            color: 'var(--accent-signal)'
                           }}>
-                            <span>FAISS HNSW INDEXED</span>
-                            <span>64-D</span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <ImageIcon size={11} /> IMAGE PREVIEW
+                            </span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: 'var(--text-secondary)' }}>
+                              <Eye size={11} /> ZOOM & DETAILS
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Metadata Content */}
+                        <div style={{ padding: '12px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                          <div>
+                            <div className="mono-display" style={{ fontSize: '0.92rem', color: 'var(--text-primary)', marginBottom: '2px' }}>
+                              {p.name}
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace", marginBottom: '6px' }}>
+                              ID: {p.person_id}
+                            </div>
+                            <div style={{
+                              fontSize: '0.72rem',
+                              color: 'var(--text-primary)',
+                              marginBottom: '10px',
+                              lineHeight: 1.35,
+                              height: '34px',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical'
+                            }}>
+                              {p.offense || 'Active Criminal Warrant'}
+                            </div>
                           </div>
 
-                          {/* Action Buttons */}
-                          <div style={{ display: 'flex', gap: '6px' }}>
-                            <button
-                              onClick={() => setPreviewTarget(p)}
-                              style={{
-                                flex: 1,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '4px',
-                                backgroundColor: 'var(--bg-panel-raised)',
-                                border: '1px solid var(--border-hairline)',
-                                color: 'var(--text-primary)',
-                                padding: '5px 8px',
-                                fontSize: '0.7rem',
-                                fontFamily: "'IBM Plex Mono', monospace",
-                                cursor: 'pointer'
-                              }}
-                              onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent-signal)')}
-                              onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-hairline)')}
-                            >
-                              <Eye size={12} /> DOSSIER
-                            </button>
+                          <div>
+                            {/* FAISS Index Tag */}
+                            <div style={{
+                              fontSize: '0.64rem',
+                              fontFamily: "'IBM Plex Mono', monospace",
+                              color: 'var(--accent-signal)',
+                              backgroundColor: 'rgba(0, 217, 163, 0.08)',
+                              padding: '4px 6px',
+                              border: '1px solid rgba(0, 217, 163, 0.2)',
+                              marginBottom: '10px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between'
+                            }}>
+                              <span>FAISS HNSW INDEXED</span>
+                              <span>64-D</span>
+                            </div>
 
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setDeleteConfirmTarget(p);
-                              }}
-                              aria-label={`Delete ${p.name}`}
-                              title="Purge target from Database and FAISS"
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '4px',
-                                backgroundColor: 'rgba(255, 71, 87, 0.1)',
-                                border: '1px solid rgba(255, 71, 87, 0.3)',
-                                color: 'var(--accent-alert)',
-                                padding: '5px 8px',
-                                fontSize: '0.7rem',
-                                fontFamily: "'IBM Plex Mono', monospace",
-                                cursor: 'pointer'
-                              }}
-                              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(255, 71, 87, 0.25)')}
-                              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(255, 71, 87, 0.1)')}
-                            >
-                              <Trash2 size={12} /> PURGE
-                            </button>
+                            {/* Action Buttons: IMAGE PREVIEW & DELETE */}
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button
+                                onClick={() => {
+                                  setPreviewZoom(1.0);
+                                  setPreviewTarget(p);
+                                }}
+                                style={{
+                                  flex: 1,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '5px',
+                                  backgroundColor: 'var(--bg-panel-raised)',
+                                  border: '1px solid var(--border-hairline)',
+                                  color: 'var(--text-primary)',
+                                  padding: '6px 8px',
+                                  fontSize: '0.7rem',
+                                  fontFamily: "'IBM Plex Mono', monospace",
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease'
+                                }}
+                                onMouseEnter={e => {
+                                  e.currentTarget.style.borderColor = 'var(--accent-signal)';
+                                  e.currentTarget.style.color = 'var(--accent-signal)';
+                                }}
+                                onMouseLeave={e => {
+                                  e.currentTarget.style.borderColor = 'var(--border-hairline)';
+                                  e.currentTarget.style.color = 'var(--text-primary)';
+                                }}
+                              >
+                                <ImageIcon size={12} /> PREVIEW
+                              </button>
+
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteConfirmTarget(p);
+                                }}
+                                aria-label={`Delete ${p.name}`}
+                                title="Delete suspect from database and FAISS"
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '5px',
+                                  backgroundColor: 'rgba(255, 71, 87, 0.12)',
+                                  border: '1px solid rgba(255, 71, 87, 0.4)',
+                                  color: 'var(--accent-alert)',
+                                  padding: '6px 10px',
+                                  fontSize: '0.7rem',
+                                  fontFamily: "'IBM Plex Mono', monospace",
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease'
+                                }}
+                                onMouseEnter={e => {
+                                  e.currentTarget.style.backgroundColor = 'rgba(255, 71, 87, 0.28)';
+                                  e.currentTarget.style.borderColor = 'var(--accent-alert)';
+                                }}
+                                onMouseLeave={e => {
+                                  e.currentTarget.style.backgroundColor = 'rgba(255, 71, 87, 0.12)';
+                                  e.currentTarget.style.borderColor = 'rgba(255, 71, 87, 0.4)';
+                                }}
+                              >
+                                <Trash2 size={12} /> DELETE
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1154,49 +1242,117 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
               alignItems: 'center'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <ShieldAlert size={18} color="var(--accent-signal)" />
-                <span className="mono-display" style={{ fontSize: '0.95rem' }}>
-                  CRIMINAL DOSSIER // {previewTarget.person_id}
+                <ImageIcon size={18} color="var(--accent-signal)" />
+                <span className="mono-display" style={{ fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                  CRIMINAL IMAGE PREVIEW // {previewTarget.person_id}
                 </span>
               </div>
               <button
                 onClick={() => setPreviewTarget(null)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }}
+                aria-label="Close image preview"
               >
                 <X size={18} />
               </button>
             </div>
 
             {/* Lightbox Body */}
-            <div style={{ padding: '20px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-              {/* Large Mugshot Preview */}
+            <div style={{ padding: '20px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+              {/* Large Mugshot Image Preview with Zoom Controls */}
               <div style={{
-                width: '240px',
-                height: '260px',
+                width: '280px',
+                height: '310px',
                 backgroundColor: '#000',
                 border: '1px solid var(--border-hairline)',
                 position: 'relative',
                 overflow: 'hidden',
                 borderRadius: '2px',
-                boxShadow: '0 8px 24px rgba(0,0,0,0.8)'
+                boxShadow: '0 8px 24px rgba(0,0,0,0.8)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
               }}>
                 <TargetImage
                   photoUrl={getPhotoUrl(previewTarget.photo_url || previewTarget.photo_path)}
                   name={previewTarget.name}
                   large
+                  zoom={previewZoom}
                 />
+
+                {/* Floating Zoom Controls for Image Preview */}
+                <div style={{
+                  position: 'absolute',
+                  top: '10px',
+                  left: '10px',
+                  display: 'flex',
+                  gap: '4px',
+                  zIndex: 10,
+                  backgroundColor: 'rgba(10, 14, 20, 0.85)',
+                  padding: '3px',
+                  border: '1px solid var(--border-hairline)',
+                  borderRadius: '2px'
+                }}>
+                  <button
+                    onClick={() => setPreviewZoom(z => Math.min(3.0, Number((z + 0.25).toFixed(2))))}
+                    title="Zoom In"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--accent-signal)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '3px'
+                    }}
+                  >
+                    <ZoomIn size={14} />
+                  </button>
+                  <button
+                    onClick={() => setPreviewZoom(z => Math.max(0.6, Number((z - 0.25).toFixed(2))))}
+                    title="Zoom Out"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--accent-signal)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '3px'
+                    }}
+                  >
+                    <ZoomOut size={14} />
+                  </button>
+                  <button
+                    onClick={() => setPreviewZoom(1.0)}
+                    title="Reset Zoom"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-secondary)',
+                      fontSize: '0.65rem',
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      cursor: 'pointer',
+                      padding: '0 4px',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}
+                  >
+                    {Math.round(previewZoom * 100)}%
+                  </button>
+                </div>
 
                 <div style={{
                   position: 'absolute',
-                  top: '8px',
-                  right: '8px',
+                  top: '10px',
+                  right: '10px',
                   backgroundColor: 'rgba(10, 14, 20, 0.92)',
                   border: `1px solid ${previewTarget.threat_level === 'CRITICAL' ? 'var(--accent-alert)' : '#f59e0b'}`,
                   color: previewTarget.threat_level === 'CRITICAL' ? 'var(--accent-alert)' : '#f59e0b',
                   padding: '2px 8px',
                   fontSize: '0.68rem',
                   fontFamily: "'IBM Plex Mono', monospace",
-                  fontWeight: 700
+                  fontWeight: 700,
+                  zIndex: 2
                 }}>
                   {previewTarget.threat_level || 'HIGH'}
                 </div>
@@ -1207,16 +1363,20 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                   left: 0,
                   right: 0,
                   backgroundColor: 'rgba(10, 14, 20, 0.88)',
-                  padding: '4px 8px',
-                  fontSize: '0.65rem',
+                  padding: '6px 10px',
+                  fontSize: '0.68rem',
                   fontFamily: "'IBM Plex Mono', monospace",
                   color: 'var(--accent-signal)',
                   borderTop: '1px solid var(--border-hairline)',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '4px'
+                  justifyContent: 'space-between',
+                  zIndex: 2
                 }}>
-                  <Fingerprint size={12} /> BIOMETRIC REFERENCE VERIFIED
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Fingerprint size={12} /> BIOMETRIC PREVIEW
+                  </span>
+                  <span style={{ color: 'var(--text-secondary)' }}>HIGH-RES</span>
                 </div>
               </div>
 
@@ -1265,8 +1425,8 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                   </div>
                 </div>
 
-                {/* Actions in Lightbox */}
-                <div style={{ display: 'flex', gap: '8px', marginTop: 'auto', paddingTop: '8px' }}>
+                {/* Actions in Lightbox: Pinpoint & Delete */}
+                <div style={{ display: 'flex', gap: '8px', marginTop: 'auto', paddingTop: '10px' }}>
                   {onSelectPerson && (
                     <button
                       onClick={() => {
@@ -1283,10 +1443,10 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                         backgroundColor: 'var(--accent-signal)',
                         color: '#0A0E14',
                         border: 'none',
-                        padding: '8px 12px',
-                        fontSize: '0.75rem',
+                        padding: '10px 14px',
+                        fontSize: '0.78rem',
                         fontFamily: "'IBM Plex Mono', monospace",
-                        fontWeight: 600,
+                        fontWeight: 700,
                         cursor: 'pointer'
                       }}
                     >
@@ -1305,14 +1465,14 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                       backgroundColor: 'rgba(255, 71, 87, 0.15)',
                       color: 'var(--accent-alert)',
                       border: '1px solid var(--accent-alert)',
-                      padding: '8px 14px',
-                      fontSize: '0.75rem',
+                      padding: '10px 16px',
+                      fontSize: '0.78rem',
                       fontFamily: "'IBM Plex Mono', monospace",
-                      fontWeight: 600,
+                      fontWeight: 700,
                       cursor: 'pointer'
                     }}
                   >
-                    <Trash2 size={14} /> PURGE TARGET
+                    <Trash2 size={14} /> DELETE TARGET
                   </button>
                 </div>
               </div>
@@ -1356,7 +1516,7 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <AlertTriangle size={24} color="var(--accent-alert)" />
               <h3 className="mono-display" style={{ fontSize: '1rem', margin: 0, color: 'var(--accent-alert)' }}>
-                CONFIRM TARGET PURGE
+                CONFIRM TARGET DELETION
               </h3>
             </div>
 
@@ -1411,7 +1571,7 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                   cursor: isDeleting ? 'wait' : 'pointer'
                 }}
               >
-                {isDeleting ? 'PURGING...' : 'PURGE TARGET'}
+                {isDeleting ? 'DELETING...' : 'DELETE SUSPECT'}
               </button>
             </div>
           </div>
@@ -1422,9 +1582,9 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
 };
 
 /**
- * Tactical Mugshot Image Component with Automatic Fallback & Visual Reticle
+ * Tactical Mugshot Image Component with Automatic Fallback, Reticle & Zoom Support
  */
-function TargetImage({ photoUrl, name, large }: { photoUrl?: string; name: string; large?: boolean }) {
+function TargetImage({ photoUrl, name, large, zoom = 1.0 }: { photoUrl?: string; name: string; large?: boolean; zoom?: number }) {
   const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
@@ -1432,12 +1592,18 @@ function TargetImage({ photoUrl, name, large }: { photoUrl?: string; name: strin
   }, [photoUrl]);
 
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
       {!loadError && photoUrl ? (
         <img
           src={photoUrl}
           alt={name}
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            transform: `scale(${zoom})`,
+            transition: 'transform 0.2s ease-out'
+          }}
           onError={() => setLoadError(true)}
         />
       ) : (
@@ -1476,3 +1642,4 @@ function TargetImage({ photoUrl, name, large }: { photoUrl?: string; name: strin
     </div>
   );
 }
+

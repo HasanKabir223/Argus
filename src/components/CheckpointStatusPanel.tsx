@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { X, ShieldCheck, MapPin } from 'lucide-react';
+import { X } from 'lucide-react';
 import { CHECKPOINTS, type Match } from '../data/mockData';
 import { formatDistanceToNow } from 'date-fns';
 
