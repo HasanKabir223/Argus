@@ -23,7 +23,7 @@ export const DetectionVisual: React.FC = () => {
             width="100"
             height="130"
             fill="none"
-            stroke="#00D9A3"
+            stroke="#38BDF8"
             strokeWidth="1.5"
             className="animated-box-rect"
           />

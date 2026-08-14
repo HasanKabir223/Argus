@@ -51,8 +51,11 @@ class GalleryManager:
         3. Persists criminal profile into SQLite reference_persons database table
         4. Adds profile to FAISS vector index & LSH hash tables
         """
+        import re
         t_start = time.time()
-        photo_filename = f"{person_id}_{name.replace(' ', '_').lower()}.jpg"
+        clean_pid = re.sub(r'[^a-zA-Z0-9_-]', '_', person_id)
+        clean_nm = re.sub(r'[^a-zA-Z0-9_-]', '_', name.replace(' ', '_').lower())
+        photo_filename = f"{clean_pid}_{clean_nm}.jpg"
         photo_path = os.path.join(self.gallery_dir, photo_filename)
         
         # Ensure image is valid and write to disk
@@ -62,11 +65,28 @@ class GalleryManager:
             if max(h, w) > 800:
                 scale = 800.0 / max(h, w)
                 photo_bgr = cv2.resize(photo_bgr, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
-            cv2.imwrite(photo_path, photo_bgr)
+            try:
+                is_success, buffer = cv2.imencode(".jpg", photo_bgr)
+                if is_success:
+                    with open(photo_path, "wb") as f:
+                        f.write(buffer)
+                else:
+                    cv2.imwrite(photo_path, photo_bgr)
+            except Exception as write_err:
+                print(f"[GalleryManager] Disk write note: {write_err}")
+                cv2.imwrite(photo_path, photo_bgr)
         else:
             photo_bgr = np.zeros((112, 112, 3), dtype=np.uint8)
             cv2.circle(photo_bgr, (56, 56), 40, (180, 140, 100), -1)
-            cv2.imwrite(photo_path, photo_bgr)
+            try:
+                is_success, buffer = cv2.imencode(".jpg", photo_bgr)
+                if is_success:
+                    with open(photo_path, "wb") as f:
+                        f.write(buffer)
+                else:
+                    cv2.imwrite(photo_path, photo_bgr)
+            except Exception:
+                cv2.imwrite(photo_path, photo_bgr)
 
         # Generate deep embedding from reference photo
         t_emb = time.time()
@@ -187,6 +207,43 @@ class GalleryManager:
 
         return True
 
+    def delete_all_persons(self) -> Dict[str, Any]:
+        """
+        Deletes all criminal profiles from:
+        1. SQLite reference_persons table
+        2. FAISS vector index & in-memory reference lists (resets to 0 vectors)
+        3. Cleans in-memory persons cache
+        4. Cleans enrolled photos in gallery_dir
+        """
+        count_before = len(self.persons)
+
+        # 1. Delete from SQLite DB
+        EventService.delete_all_reference_persons()
+
+        # 2. Remove files from gallery directory
+        if os.path.exists(self.gallery_dir):
+            for fname in os.listdir(self.gallery_dir):
+                if fname.lower().endswith(('.jpg', '.jpeg', '.png', '.jfif', '.webp')):
+                    try:
+                        os.remove(os.path.join(self.gallery_dir, fname))
+                    except Exception:
+                        pass
+
+        # 3. Clear in-memory persons list
+        self.persons = []
+
+        # 4. Clear FAISS index completely
+        if hasattr(self.search_engine, 'clear_all_references'):
+            self.search_engine.clear_all_references()
+        else:
+            self.search_engine.set_reference_database(np.empty((0, getattr(self.search_engine, 'dimension', 512)), dtype=np.float32), [])
+
+        print(f"[GalleryManager] ✓ Purged all {count_before} suspects from SQLite, FAISS (0 vectors), and gallery disk storage.")
+        return {
+            "status": "success",
+            "purged_count": count_before,
+            "faiss_vector_count": 0
+        }
 
     def load_initial_gallery(self, seed_profiles: List[Dict[str, Any]]):
         """

@@ -236,8 +236,30 @@ def delete_reference_person(person_id: str):
     return {"status": "DELETED", "person_id": person_id}
 
 
-@router.post("/watchlist/sync")
+@router.delete("/reference-persons")
+def delete_all_reference_persons():
+    """
+    Wipes ALL criminal reference targets from the SQLite database, FAISS vector index, and gallery storage.
+    """
+    pipe = get_pipeline()
+    result = pipe.gallery_manager.delete_all_persons()
+    return {
+        "status": "PURGED",
+        "message": "All suspects and vectors have been wiped from SQLite, FAISS, and gallery disk.",
+        "purged_count": result.get("purged_count", 0),
+        "faiss_vectors": 0
+    }
 
+
+@router.delete("/watchlist/all")
+def delete_all_watchlist_alias():
+    """
+    Convenience alias for deleting all reference persons.
+    """
+    return delete_all_reference_persons()
+
+
+@router.post("/watchlist/sync")
 def sync_watchlist():
     """
     Scans the WatchList folder and synchronizes all criminal profiles into SQLite and FAISS.

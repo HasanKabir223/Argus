@@ -301,6 +301,18 @@ input:focus-visible,
   filter: brightness(0.92) contrast(1.15) saturate(1.05);
 }
 
+.hd-satellite-tile .leaflet-tile {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  filter: brightness(1.05) contrast(1.08) saturate(1.12);
+}
+
+.hd-terrain-tile .leaflet-tile {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  filter: brightness(0.96) contrast(1.12) saturate(1.08);
+}
+
 /* Custom Tactical Radar Ring Animations */
 @keyframes radar-pulse-alert {
   0% {

@@ -4,26 +4,28 @@
    ========================================================================== */
 
 :root {
-  /* Backgrounds */
-  --bg-void:          #0A0E14;   /* base canvas — near-black, blue-shifted */
-  --bg-panel:         #12161F;   /* panel/card surface */
-  --bg-panel-raised:  #1A2029;   /* hover/active surface */
-  --bg-glass:         rgba(18, 22, 31, 0.72);  /* translucent panel (backdrop-filter layer) */
+  /* Backgrounds — Palantir Deep Obsidian */
+  --bg-void:          #070B12;   /* base canvas — deep aerospace midnight obsidian */
+  --bg-panel:         #0E1624;   /* panel/card surface */
+  --bg-panel-raised:  #152033;   /* hover/active surface */
+  --bg-glass:         rgba(14, 22, 36, 0.78);  /* translucent glass layer */
 
   /* Borders */
-  --border-hairline:  #262D3A;   /* all structural dividers, 1px only */
-  --border-glass:     rgba(255, 255, 255, 0.06); /* glass panel edges */
+  --border-hairline:  #1E293B;   /* structural dividers */
+  --border-glass:     rgba(255, 255, 255, 0.08); /* glass panel edges */
 
-  /* Text */
-  --text-primary:     #E8ECF1;   /* main text — not pure white */
-  --text-secondary:   #8892A0;   /* labels, metadata, timestamps */
-  --text-tertiary:    #4A5568;   /* deeply dimmed, decorative labels only */
+  /* Text — High Legibility Platinum & Steel */
+  --text-primary:     #F8FAFC;   /* crisp off-white */
+  --text-secondary:   #94A3B8;   /* slate labels, metadata, timestamps */
+  --text-tertiary:    #64748B;   /* subtle structural labels */
 
-  /* Accents — used with strict discipline */
-  --accent-signal:    #00D9A3;   /* cold teal-green — active/confirmed color */
-  --accent-alert:     #FF4757;   /* red — unreviewed alert */
-  --accent-amber:     #FFB830;   /* amber — warning/borderline */
-  --accent-muted:     #3D4759;   /* inactive/idle states */
+  /* Accents — Dashing Electric Ice Blue / Cyan */
+  --accent-signal:    #38BDF8;   /* dashing ice cyan / electric sky blue */
+  --accent-signal-bright: #67E8F9; /* cyan 300 */
+  --accent-signal-glow: rgba(56, 189, 248, 0.35);
+  --accent-alert:     #F43F5E;   /* urgent rose alert */
+  --accent-amber:     #FBBF24;   /* caution amber */
+  --accent-muted:     #334155;   /* inactive/idle states */
 
   /* Typography */
   --font-mono:        'JetBrains Mono', 'IBM Plex Mono', monospace;
@@ -96,13 +98,13 @@
 .grid-dot {
   width: 4px;
   height: 4px;
-  background: rgba(0, 217, 163, 0.35);
+  background: rgba(56, 189, 248, 0.35);
   border-radius: 1px;
 }
 
 .grid-dot.center-active {
   background: var(--accent-signal);
-  box-shadow: 0 0 6px rgba(0, 217, 163, 0.6);
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.6);
 }
 
 .brand-name {
@@ -154,16 +156,24 @@
   background: var(--bg-void);
 }
 
-/* Functional Left Vignette (Text Readability) */
+/* Functional Left & Bottom Vignette (Ensures 100% typography legibility with bright daytime Earth) */
 .globe-vignette {
   position: absolute;
   inset: 0;
-  background: radial-gradient(
-    ellipse 60% 100% at 20% 50%,
-    rgba(10, 14, 20, 0.88) 0%,
-    rgba(10, 14, 20, 0.45) 42%,
-    transparent 72%
-  );
+  background:
+    linear-gradient(
+      to right,
+      rgba(10, 14, 20, 0.95) 0%,
+      rgba(10, 14, 20, 0.85) 24%,
+      rgba(10, 14, 20, 0.45) 44%,
+      rgba(10, 14, 20, 0.10) 60%,
+      transparent 76%
+    ),
+    linear-gradient(
+      to top,
+      rgba(10, 14, 20, 0.85) 0%,
+      transparent 16%
+    );
   pointer-events: none;
   z-index: 1;
 }
@@ -631,11 +641,11 @@
 }
 
 .vector-bar.query-bar {
-  background: rgba(0, 217, 163, 0.4);
+  background: rgba(56, 189, 248, 0.5);
 }
 
 .vector-bar.ref-bar {
-  background: rgba(232, 236, 241, 0.4);
+  background: rgba(248, 250, 252, 0.4);
 }
 
 .similarity-hud {
@@ -698,8 +708,8 @@
 
 .mini-status-badge {
   color: var(--accent-alert);
-  background: rgba(255, 71, 87, 0.12);
-  border: 1px solid rgba(255, 71, 87, 0.35);
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.35);
   padding: 2px 6px;
   border-radius: 2px;
   letter-spacing: 0.1em;
@@ -801,7 +811,7 @@
 }
 
 .mini-btn.confirm {
-  background: rgba(0, 217, 163, 0.15);
+  background: rgba(56, 189, 248, 0.15);
   border: 1px solid var(--accent-signal);
   color: var(--accent-signal);
 }
@@ -840,7 +850,7 @@
 
 .tech-card:hover {
   background: var(--bg-panel-raised);
-  border-color: rgba(0, 217, 163, 0.2);
+  border-color: rgba(56, 189, 248, 0.25);
 }
 
 .tech-card:active {

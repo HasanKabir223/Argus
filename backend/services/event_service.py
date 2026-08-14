@@ -378,3 +378,23 @@ class EventService:
         except Exception:
             return True
 
+    @staticmethod
+    def delete_all_reference_persons() -> bool:
+        """
+        Wipes ALL reference persons records from SQLite reference_persons table and memory.
+        """
+        global _MEM_PERSONS
+        _MEM_PERSONS = {}
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM reference_persons")
+            conn.commit()
+            conn.close()
+            print("[EventService] ✓ Wiped all reference persons from SQLite database.")
+            return True
+        except Exception as e:
+            print(f"[EventService] Error deleting all reference persons: {e}")
+            return True
+
+

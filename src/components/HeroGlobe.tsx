@@ -15,35 +15,35 @@ const CHECKPOINT_NODES = [
   { lat: 26.8467, lng: 80.9462, city: 'Lucknow', code: 'CP-LKO' },
 ];
 
-// Active Transit Sighting Arcs
+// Active Transit Sighting Arcs with dashing Palantir Electric Cyan emission
 const TRANSIT_ARCS = [
   {
     startLat: 28.6139,
     startLng: 77.2090,
     endLat: 19.0760,
     endLng: 72.8777,
-    color: ['rgba(0, 217, 163, 0.1)', '#00D9A3'],
+    color: ['rgba(56, 189, 248, 0.25)', '#38BDF8'],
   },
   {
     startLat: 19.0760,
     startLng: 72.8777,
     endLat: 12.9716,
     endLng: 77.5946,
-    color: ['rgba(0, 217, 163, 0.1)', '#00D9A3'],
+    color: ['rgba(56, 189, 248, 0.25)', '#38BDF8'],
   },
   {
     startLat: 12.9716,
     startLng: 77.5946,
     endLat: 22.5726,
     endLng: 88.3639,
-    color: ['rgba(0, 217, 163, 0.1)', '#00D9A3'],
+    color: ['rgba(56, 189, 248, 0.25)', '#38BDF8'],
   },
   {
     startLat: 28.6139,
     startLng: 77.2090,
     endLat: 22.5726,
     endLng: 88.3639,
-    color: ['rgba(0, 217, 163, 0.1)', '#00D9A3'],
+    color: ['rgba(56, 189, 248, 0.25)', '#38BDF8'],
   },
 ];
 
@@ -73,62 +73,84 @@ export const HeroGlobe: React.FC = () => {
     return () => mediaQuery.removeEventListener('change', listener);
   }, []);
 
-  // Configure Globe on load: Initial viewpoint focused on India & continuous auto-rotation
+  // Configure Globe on load: Initial viewpoint focused on India & continuous bright auto-rotation
   useEffect(() => {
     if (globeEl.current) {
-      // Position camera over Indian subcontinent (lat: 20, lng: 78, altitude: 2.2)
-      globeEl.current.pointOfView({ lat: 20.5937, lng: 78.9629, altitude: 2.2 }, 0);
+      // Position camera over Indian subcontinent (lat: 20.59, lng: 78.96, altitude: 2.05)
+      globeEl.current.pointOfView({ lat: 20.5937, lng: 78.9629, altitude: 2.05 }, 0);
 
       const controls = globeEl.current.controls();
       if (controls) {
         controls.autoRotate = !prefersReducedMotion;
-        // 0.08 deg per frame equivalent speed
-        controls.autoRotateSpeed = 0.48;
+        controls.autoRotateSpeed = 0.7;
         controls.enableZoom = false;
         controls.enablePan = false;
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.rotateSpeed = 0.6;
+      }
+
+      // Configure HD WebGL Renderer with device pixel ratio
+      try {
+        const renderer = globeEl.current.renderer();
+        if (renderer && typeof renderer.setPixelRatio === 'function') {
+          renderer.setPixelRatio(Math.min(window.devicePixelRatio || 2, 2.5));
+        }
+      } catch {
+        // Fallback gracefully
+      }
+
+      // Enhance scene lighting for maximum daytime radiance & tactical contrast
+      const scene = globeEl.current.scene();
+      if (scene) {
+        scene.traverse((obj: any) => {
+          if (obj.isLight) {
+            obj.intensity = Math.max(obj.intensity * 2.0, 2.8);
+          }
+        });
       }
     }
   }, [prefersReducedMotion]);
 
-  // Subtle physical tilt on mouse move over globe
+  // Smooth hover interaction: modulate auto-rotation speed naturally without interrupting camera angle
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (prefersReducedMotion || !globeEl.current) return;
-    const { innerWidth, innerHeight } = window;
-    // Calculate normalized delta from center (-1 to 1)
-    const normX = (e.clientX / innerWidth - 0.5) * 2;
-    const normY = (e.clientY / innerHeight - 0.5) * 2;
+    const controls = globeEl.current.controls();
+    if (!controls) return;
 
-    // Apply max 4-5 degrees of tilt
-    const currentPov = globeEl.current.pointOfView();
-    if (currentPov) {
-      const targetAltitude = 2.2 + normY * 0.08;
-      globeEl.current.pointOfView({
-        lat: 20.5937 - normY * 4.5,
-        lng: currentPov.lng + normX * 0.4,
-        altitude: Math.max(1.8, Math.min(2.5, targetAltitude)),
-      });
-    }
+    // Slight speed modulation based on horizontal cursor delta from center (0.45x to 0.95x)
+    const normX = (e.clientX / window.innerWidth - 0.5) * 2;
+    controls.autoRotateSpeed = 0.7 + normX * 0.25;
   }, [prefersReducedMotion]);
 
   useEffect(() => {
-    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, [handleMouseMove]);
 
-  // Points configuration: 2px size, cold teal #00D9A3
+  // Points configuration: high-contrast Palantir Cyan beacons
   const pointsData = CHECKPOINT_NODES.map((cp) => ({
     lat: cp.lat,
     lng: cp.lng,
-    size: 0.16,
-    color: '#00D9A3',
+    size: 0.36,
+    color: '#38BDF8',
     name: `${cp.city} (${cp.code})`,
+  }));
+
+  // Pulsing radar rings for active checkpoints (crisp electric cyan against daylight ocean & landmass)
+  const ringsData = CHECKPOINT_NODES.map((cp) => ({
+    lat: cp.lat,
+    lng: cp.lng,
+    maxR: 4.2,
+    propagationSpeed: 2.2,
+    repeatPeriod: 1200,
   }));
 
   return (
     <div
       className="hero-globe-wrapper"
       role="img"
-      aria-label="Rotating globe showing ARGUS checkpoint locations across India"
+      aria-label="Photorealistic bright daytime 3D Earth globe showing ARGUS checkpoint locations and active transit arcs across India"
       style={{
         position: 'absolute',
         top: 0,
@@ -136,35 +158,44 @@ export const HeroGlobe: React.FC = () => {
         width: '100%',
         height: '100%',
         overflow: 'hidden',
-        pointerEvents: 'none',
+        pointerEvents: 'auto',
         zIndex: 0,
+        cursor: 'grab',
       }}
     >
       <Globe
         ref={globeEl}
         width={dimensions.width}
         height={dimensions.height}
-        globeImageUrl="//unpkg.com/three-globe/example/img/earth-night.jpg"
-        backgroundColor="rgba(10, 14, 20, 1)"
+        globeImageUrl="//unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
+        bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
+        backgroundColor="rgba(7, 11, 18, 1)"
         showAtmosphere={true}
-        atmosphereColor="#00D9A3"
-        atmosphereAltitude={0.16}
+        atmosphereColor="#38bdf8"
+        atmosphereAltitude={0.22}
 
         // Checkpoint Points
         pointsData={pointsData}
-        pointAltitude={0.015}
+        pointAltitude={0.04}
         pointRadius="size"
         pointColor="color"
-        pointResolution={16}
+        pointResolution={24}
+
+        // Pulsing Radar Rings
+        ringsData={prefersReducedMotion ? [] : ringsData}
+        ringColor={() => (t: number) => `rgba(56, 189, 248, ${Math.max(0, 1 - t * 1.05)})`}
+        ringMaxRadius="maxR"
+        ringPropagationSpeed="propagationSpeed"
+        ringRepeatPeriod="repeatPeriod"
 
         // Animated Transit Sighting Arcs
         arcsData={prefersReducedMotion ? [] : TRANSIT_ARCS}
         arcColor="color"
-        arcDashLength={0.3}
-        arcDashGap={2}
-        arcDashAnimateTime={2000}
-        arcAltitudeAutoScale={0.22}
-        arcStroke={1.2}
+        arcDashLength={0.4}
+        arcDashGap={1.4}
+        arcDashAnimateTime={1600}
+        arcAltitudeAutoScale={0.28}
+        arcStroke={2.0}
       />
     </div>
   );

@@ -16,13 +16,45 @@ interface FaceThumbProps {
  */
 export const FaceThumb: React.FC<FaceThumbProps> = ({ src, alt, personId, className }) => {
   const [failed, setFailed] = useState(false);
+  const [candidateIndex, setCandidateIndex] = useState(0);
+  const [candidates, setCandidates] = useState<string[]>([]);
 
-  // Reset failure state if a new src comes in (e.g. list item recycled).
   useEffect(() => {
+    const list: string[] = [];
+    if (src) {
+      list.push(src);
+      if (src.startsWith('http://localhost:8000/')) {
+        list.push(src.replace('http://localhost:8000', ''));
+      }
+    }
+    // Check local image vault if personId is provided
+    if (personId) {
+      try {
+        const raw = localStorage.getItem('sentinel_watchlist_images_vault');
+        if (raw) {
+          const vault = JSON.parse(raw);
+          if (vault[personId] && !list.includes(vault[personId])) {
+            list.push(vault[personId]);
+          }
+        }
+      } catch {}
+    }
+    setCandidates(list.filter(Boolean));
+    setCandidateIndex(0);
     setFailed(false);
-  }, [src]);
+  }, [src, personId]);
 
-  if (failed) {
+  const currentSrc = candidates[candidateIndex];
+
+  const handleError = () => {
+    if (candidateIndex < candidates.length - 1) {
+      setCandidateIndex(prev => prev + 1);
+    } else {
+      setFailed(true);
+    }
+  };
+
+  if (failed || !currentSrc) {
     const initials = (personId || alt || '?')
       .replace(/^p-/i, '')
       .replace(/[^a-z0-9]/gi, '')
@@ -55,11 +87,11 @@ export const FaceThumb: React.FC<FaceThumbProps> = ({ src, alt, personId, classN
 
   return (
     <img
-      src={src}
+      src={currentSrc}
       alt={alt}
       className={className}
       style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-      onError={() => setFailed(true)}
+      onError={handleError}
     />
   );
 };

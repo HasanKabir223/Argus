@@ -5,53 +5,53 @@ import { DetectionVisual, MatchingVisual, AlertVisual } from '../components/Arch
 import { useReveal } from '../hooks/useReveal';
 import './LandingPage.css';
 
-// ─── Minimal Purpose-Built 16x16 Geometric SVG Glyphs ────────────────────────
+// ─── Minimal Purpose-Built 16x16 Geometric SVG Glyphs (Palantir Ice Cyan) ───
 const Glyphs = {
   Detection: () => (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M2 5V3C2 2.44772 2.44772 2 3 2H5" stroke="#00D9A3" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M11 2H13C13.5523 2 14 2.44772 14 3V5" stroke="#00D9A3" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M14 11V13C14 13.5523 13.5523 14 13 14H11" stroke="#00D9A3" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M5 14H3C2.44772 14 2 13.5523 2 13V11" stroke="#00D9A3" strokeWidth="1.5" strokeLinecap="round" />
-      <circle cx="8" cy="8" r="2" fill="#00D9A3" />
+      <path d="M2 5V3C2 2.44772 2.44772 2 3 2H5" stroke="#38BDF8" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M11 2H13C13.5523 2 14 2.44772 14 3V5" stroke="#38BDF8" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M14 11V13C14 13.5523 13.5523 14 13 14H11" stroke="#38BDF8" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M5 14H3C2.44772 14 2 13.5523 2 13V11" stroke="#38BDF8" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="8" cy="8" r="2" fill="#38BDF8" />
     </svg>
   ),
   Tracking: () => (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M3 13L7 9L9 11L13 5" stroke="#00D9A3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="13" cy="5" r="1.5" fill="#00D9A3" />
-      <circle cx="3" cy="13" r="1" fill="rgba(0, 217, 163, 0.4)" />
+      <path d="M3 13L7 9L9 11L13 5" stroke="#38BDF8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="13" cy="5" r="1.5" fill="#38BDF8" />
+      <circle cx="3" cy="13" r="1" fill="rgba(56, 189, 248, 0.4)" />
     </svg>
   ),
   Embedding: () => (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <rect x="2" y="3" width="12" height="1.5" fill="#00D9A3" opacity="0.9" />
-      <rect x="2" y="7" width="8" height="1.5" fill="#00D9A3" opacity="0.6" />
-      <rect x="2" y="11" width="10" height="1.5" fill="#00D9A3" opacity="0.8" />
+      <rect x="2" y="3" width="12" height="1.5" fill="#38BDF8" opacity="0.9" />
+      <rect x="2" y="7" width="8" height="1.5" fill="#38BDF8" opacity="0.6" />
+      <rect x="2" y="11" width="10" height="1.5" fill="#38BDF8" opacity="0.8" />
     </svg>
   ),
   Search: () => (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="7" cy="7" r="4.5" stroke="#00D9A3" strokeWidth="1.5" />
-      <path d="M10.5 10.5L14 14" stroke="#00D9A3" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M7 4.5V9.5" stroke="#00D9A3" strokeWidth="1" strokeLinecap="round" />
-      <path d="M4.5 7H9.5" stroke="#00D9A3" strokeWidth="1" strokeLinecap="round" />
+      <circle cx="7" cy="7" r="4.5" stroke="#38BDF8" strokeWidth="1.5" />
+      <path d="M10.5 10.5L14 14" stroke="#38BDF8" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M7 4.5V9.5" stroke="#38BDF8" strokeWidth="1" strokeLinecap="round" />
+      <path d="M4.5 7H9.5" stroke="#38BDF8" strokeWidth="1" strokeLinecap="round" />
     </svg>
   ),
   Backend: () => (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <rect x="2" y="2" width="12" height="4" rx="1" stroke="#00D9A3" strokeWidth="1.2" />
-      <rect x="2" y="10" width="12" height="4" rx="1" stroke="#00D9A3" strokeWidth="1.2" />
-      <circle cx="4.5" cy="4" r="0.8" fill="#00D9A3" />
-      <circle cx="4.5" cy="12" r="0.8" fill="#00D9A3" />
-      <path d="M8 6V10" stroke="#00D9A3" strokeWidth="1.2" strokeLinecap="round" />
+      <rect x="2" y="2" width="12" height="4" rx="1" stroke="#38BDF8" strokeWidth="1.2" />
+      <rect x="2" y="10" width="12" height="4" rx="1" stroke="#38BDF8" strokeWidth="1.2" />
+      <circle cx="4.5" cy="4" r="0.8" fill="#38BDF8" />
+      <circle cx="4.5" cy="12" r="0.8" fill="#38BDF8" />
+      <path d="M8 6V10" stroke="#38BDF8" strokeWidth="1.2" strokeLinecap="round" />
     </svg>
   ),
   Interface: () => (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="8" cy="8" r="6" stroke="#00D9A3" strokeWidth="1.2" />
-      <ellipse cx="8" cy="8" rx="2.5" ry="6" stroke="#00D9A3" strokeWidth="1" />
-      <path d="M2 8H14" stroke="#00D9A3" strokeWidth="1" />
+      <circle cx="8" cy="8" r="6" stroke="#38BDF8" strokeWidth="1.2" />
+      <ellipse cx="8" cy="8" rx="2.5" ry="6" stroke="#38BDF8" strokeWidth="1" />
+      <path d="M2 8H14" stroke="#38BDF8" strokeWidth="1" />
     </svg>
   ),
 };

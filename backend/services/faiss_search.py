@@ -29,12 +29,17 @@ class FaissSimilaritySearch:
         threshold_confirmed: float = 0.75,
         threshold_review: float = 0.60,
         index_type: str = "hnsw",
-        hash_bits: int = 64
+        hash_bits: int = 64,
+        ef_search: int = 64,
+        ef_construction: int = 64
     ):
         self.dimension = dimension
         self.threshold_confirmed = threshold_confirmed
         self.threshold_review = threshold_review
         self.index_type = index_type
+        self.hash_bits = hash_bits
+        self.ef_search = ef_search
+        self.ef_construction = ef_construction
 
         self._index = None
         self._footage_index = None
@@ -48,6 +53,7 @@ class FaissSimilaritySearch:
     def _init_index(self):
         """
         Initializes FAISS indices for watchlist reference database and CCTV footage embeddings.
+        Configures HNSW graph parameters (efSearch, efConstruction) for sub-millisecond query latency.
         """
         if not HAS_FAISS:
             self._index = None
@@ -57,18 +63,30 @@ class FaissSimilaritySearch:
         if self.index_type == "hnsw":
             try:
                 self._index = faiss.IndexHNSWFlat(self.dimension, 32, faiss.METRIC_INNER_PRODUCT)
-                self._index.hnsw.efSearch = 64
-                self._index.hnsw.efConstruction = 64
+                self._index.hnsw.efSearch = self.ef_search
+                self._index.hnsw.efConstruction = self.ef_construction
 
                 self._footage_index = faiss.IndexHNSWFlat(self.dimension, 32, faiss.METRIC_INNER_PRODUCT)
-                self._footage_index.hnsw.efSearch = 64
-                self._footage_index.hnsw.efConstruction = 64
+                self._footage_index.hnsw.efSearch = self.ef_search
+                self._footage_index.hnsw.efConstruction = self.ef_construction
             except Exception:
                 self._index = faiss.IndexFlatIP(self.dimension)
                 self._footage_index = faiss.IndexFlatIP(self.dimension)
         else:
             self._index = faiss.IndexFlatIP(self.dimension)
             self._footage_index = faiss.IndexFlatIP(self.dimension)
+
+    def _normalize_embeddings(self, embeddings: np.ndarray) -> np.ndarray:
+        """
+        Fast vectorized L2-normalization for 1D or 2D float32 numpy arrays.
+        Ensures memory-contiguous layout for optimal FAISS and BLAS inner-product throughput.
+        """
+        arr = np.ascontiguousarray(embeddings, dtype=np.float32)
+        if arr.ndim == 1:
+            arr = arr.reshape(1, -1)
+        norms = np.linalg.norm(arr, axis=1, keepdims=True)
+        norms = np.maximum(norms, 1e-12)
+        return np.ascontiguousarray(arr / norms, dtype=np.float32)
 
     def clear(self):
         self._init_index()
@@ -84,7 +102,7 @@ class FaissSimilaritySearch:
     ):
         """
         Loads reference missing/wanted persons embeddings into the FAISS vector index.
-        embeddings: (N, 512) float32 array, L2 normalized.
+        embeddings: (N, D) float32 array, L2 normalized.
         metadata: parallel list of N metadata dictionaries.
         """
         if len(embeddings) != len(metadata):
@@ -94,15 +112,10 @@ class FaissSimilaritySearch:
         if len(embeddings) == 0:
             return
 
-        # Ensure float32 and 2D
-        embeddings = np.ascontiguousarray(embeddings.astype(np.float32))
+        # Vectorized float32 contiguous L2-normalization
+        norm_embeddings = self._normalize_embeddings(embeddings)
 
-        # Enforce L2 unit-norm
-        norms = np.linalg.norm(embeddings, axis=-1, keepdims=True)
-        norms = np.maximum(norms, 1e-12)
-        embeddings = embeddings / norms
-
-        self._reference_embeddings = embeddings
+        self._reference_embeddings = norm_embeddings
         self._metadata = list(metadata)
 
         # Add to FAISS index
@@ -113,15 +126,15 @@ class FaissSimilaritySearch:
         """
         Adds a single reference person profile and updates FAISS index.
         """
-        emb = embedding.reshape(1, self.dimension).astype(np.float32)
-        norm = np.linalg.norm(emb)
-        if norm > 0:
-            emb = emb / norm
+        emb = self._normalize_embeddings(embedding)
 
         if self._reference_embeddings is None or len(self._reference_embeddings) == 0:
             self._reference_embeddings = emb
         else:
-            self._reference_embeddings = np.vstack([self._reference_embeddings, emb])
+            self._reference_embeddings = np.ascontiguousarray(
+                np.vstack([self._reference_embeddings, emb]),
+                dtype=np.float32
+            )
 
         self._metadata.append(meta)
 
@@ -134,15 +147,15 @@ class FaissSimilaritySearch:
         """
         Stores an embedded face detected from CCTV surveillance footage into FAISS.
         """
-        emb = embedding.reshape(1, self.dimension).astype(np.float32)
-        norm = np.linalg.norm(emb)
-        if norm > 0:
-            emb = emb / norm
+        emb = self._normalize_embeddings(embedding)
 
         if self._footage_embeddings is None or len(self._footage_embeddings) == 0:
             self._footage_embeddings = emb
         else:
-            self._footage_embeddings = np.vstack([self._footage_embeddings, emb])
+            self._footage_embeddings = np.ascontiguousarray(
+                np.vstack([self._footage_embeddings, emb]),
+                dtype=np.float32
+            )
 
         self._footage_metadata.append(meta)
 
@@ -151,6 +164,116 @@ class FaissSimilaritySearch:
 
         return len(self._footage_metadata) - 1
 
+    def store_footage_embeddings_batch(
+        self,
+        embeddings: np.ndarray,
+        metadata: List[Dict[str, Any]]
+    ) -> List[int]:
+        """
+        Simultaneously stores multiple face embeddings from CCTV footage into FAISS in a single batch.
+        """
+        if len(embeddings) == 0:
+            return []
+        if len(embeddings) != len(metadata):
+            raise ValueError(f"Mismatch: {len(embeddings)} embeddings vs {len(metadata)} metadata items")
+
+        embs = self._normalize_embeddings(embeddings)
+        start_idx = len(self._footage_metadata)
+
+        if self._footage_embeddings is None or len(self._footage_embeddings) == 0:
+            self._footage_embeddings = embs
+        else:
+            self._footage_embeddings = np.ascontiguousarray(
+                np.vstack([self._footage_embeddings, embs]),
+                dtype=np.float32
+            )
+
+        self._footage_metadata.extend(metadata)
+
+        if HAS_FAISS and self._footage_index is not None:
+            self._footage_index.add(embs)
+
+        return list(range(start_idx, start_idx + len(metadata)))
+
+    def batch_search(
+        self,
+        query_embeddings: np.ndarray,
+        top_k: int = 3,
+        threshold: Optional[float] = None
+    ) -> List[List[Dict[str, Any]]]:
+        """
+        Executes simultaneous vectorized batch searches on multiple face embeddings in a single FAISS call.
+        
+        Args:
+            query_embeddings: (N, D) or (D,) array of query vectors
+            top_k: Maximum number of nearest matches to return per query
+            threshold: Confidence cutoff threshold (defaults to self.threshold_review if None)
+
+        Returns:
+            List of match candidate lists, where element i corresponds to query_embeddings[i].
+            Each candidate dictionary contains person metadata, confidence, tier, and match_type.
+        """
+        if query_embeddings is None or len(query_embeddings) == 0:
+            return []
+
+        queries = self._normalize_embeddings(query_embeddings)
+        num_queries = len(queries)
+
+        if self._metadata is None or len(self._metadata) == 0 or self._reference_embeddings is None:
+            return [[] for _ in range(num_queries)]
+
+        min_threshold = threshold if threshold is not None else self.threshold_review
+        k = min(top_k, len(self._metadata))
+
+        if k <= 0:
+            return [[] for _ in range(num_queries)]
+
+        if HAS_FAISS and self._index is not None and self._index.ntotal > 0:
+            scores_matrix, indices_matrix = self._index.search(queries, k)
+        else:
+            # High-speed vectorized inner-product fallback: (N, D) @ (D, M) -> (N, M)
+            sim_matrix = np.matmul(queries, self._reference_embeddings.T)
+            num_refs = sim_matrix.shape[1]
+
+            if num_refs <= k:
+                indices_matrix = np.argsort(-sim_matrix, axis=1)
+            else:
+                # Fast partitioned top-k selection
+                part_indices = np.argpartition(-sim_matrix, k, axis=1)[:, :k]
+                row_idx = np.arange(num_queries)[:, None]
+                part_scores = sim_matrix[row_idx, part_indices]
+                sorted_order = np.argsort(-part_scores, axis=1)
+                indices_matrix = part_indices[row_idx, sorted_order]
+
+            scores_matrix = sim_matrix[np.arange(num_queries)[:, None], indices_matrix]
+
+        batch_results: List[List[Dict[str, Any]]] = []
+
+        for i in range(num_queries):
+            score_row = scores_matrix[i]
+            index_row = indices_matrix[i]
+            query_matches: List[Dict[str, Any]] = []
+
+            for score, idx in zip(score_row, index_row):
+                if idx < 0 or idx >= len(self._metadata):
+                    continue
+
+                score_val = float(score)
+                if score_val >= min_threshold:
+                    tier = "CONFIRMED" if score_val >= self.threshold_confirmed else "PENDING_REVIEW"
+                    query_matches.append({
+                        "person": self._metadata[idx],
+                        "confidence": round(score_val, 4),
+                        "tier": tier,
+                        "match_type": "HIGH_CONFIDENCE_ANN" if tier == "CONFIRMED" else "BORDERLINE_REVIEW"
+                    })
+
+            # Sort strictly descending and bound to top_k
+            query_matches.sort(key=lambda x: x["confidence"], reverse=True)
+            batch_results.append(query_matches[:top_k])
+
+        return batch_results
+
     def search(
         self,
         query_embedding: np.ndarray,
@@ -158,49 +281,14 @@ class FaissSimilaritySearch:
         threshold: Optional[float] = None
     ) -> List[Dict[str, Any]]:
         """
-        Executes Approximate Nearest Neighbor (ANN) search for a query embedding.
+        Executes Approximate Nearest Neighbor (ANN) search for a single query embedding.
+        Delegates to batch_search with optimized vector normalization.
         """
-        if self._metadata is None or len(self._metadata) == 0:
+        if query_embedding is None or len(query_embedding) == 0:
             return []
 
-        min_threshold = threshold if threshold is not None else self.threshold_review
-
-        # Shape query to (1, 512) and normalize
-        query = query_embedding.reshape(1, self.dimension).astype(np.float32)
-        q_norm = np.linalg.norm(query)
-        if q_norm > 0:
-            query = query / q_norm
-
-        top_k = min(top_k, len(self._metadata))
-
-        if HAS_FAISS and self._index is not None and self._index.ntotal > 0:
-            scores, indices = self._index.search(query, top_k)
-            score_row = scores[0]
-            index_row = indices[0]
-        else:
-            # High-speed vectorized inner-product fallback
-            dot_products = np.dot(self._reference_embeddings, query.T).flatten()
-            top_indices = np.argsort(-dot_products)[:top_k]
-            score_row = dot_products[top_indices]
-            index_row = top_indices
-
-        results = []
-        for score, idx in zip(score_row, index_row):
-            if idx < 0 or idx >= len(self._metadata):
-                continue
-            
-            score_val = float(score)
-            if score_val >= min_threshold:
-                tier = "CONFIRMED" if score_val >= self.threshold_confirmed else "PENDING_REVIEW"
-                
-                results.append({
-                    "person": self._metadata[idx],
-                    "confidence": round(score_val, 4),
-                    "tier": tier,
-                    "match_type": "HIGH_CONFIDENCE_ANN" if tier == "CONFIRMED" else "BORDERLINE_REVIEW"
-                })
-
-        return sorted(results, key=lambda x: x["confidence"], reverse=True)
+        batch_res = self.batch_search(query_embedding, top_k=top_k, threshold=threshold)
+        return batch_res[0] if batch_res else []
 
     def remove_reference(self, person_id: str) -> bool:
         """
@@ -228,7 +316,13 @@ class FaissSimilaritySearch:
         self.set_reference_database(new_embeddings, new_metadata)
         return True
 
-
+    def clear_all_references(self) -> bool:
+        """
+        Wipes all reference face vectors from FAISS index and resets reference metadata to empty.
+        """
+        empty_embeddings = np.empty((0, self.dimension), dtype=np.float32)
+        self.set_reference_database(empty_embeddings, [])
+        return True
 
     def get_footage_count(self) -> int:
         """

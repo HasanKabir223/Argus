@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Activity, Clock, Play, Pause, MapPin, ClipboardList,
   HelpCircle, Globe, Map, Sparkles, Cpu, Zap, Search,
-  Video, Shield
+  Video, Shield, Home
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { fetchMetrics, triggerSimulationStep, type SystemMetrics } from '../services/api';
@@ -36,6 +37,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onToggleViewMode,
   onSimulate
 }) => {
+  const navigate = useNavigate();
   const [time, setTime] = useState(new Date());
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
@@ -100,10 +102,33 @@ export const TopBar: React.FC<TopBarProps> = ({
       columnGap: '24px',
     }}>
       {/* Title & Live Status */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexShrink: 0 }}>
-        <h1 className="mono-display" style={{ fontSize: '1.15rem', margin: 0, letterSpacing: '0.05em' }}>
-          MINI GOTHAM
-        </h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexShrink: 0 }}>
+        <div
+          onClick={() => navigate('/')}
+          title="Return to ARGUS Landing Page"
+          style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+        >
+          <h1 className="mono-display" style={{ fontSize: '1.15rem', margin: 0, letterSpacing: '0.05em' }}>
+            MINI GOTHAM
+          </h1>
+        </div>
+
+        <button
+          onClick={() => navigate('/')}
+          aria-label="Return to Landing Page"
+          title="Return to ARGUS Landing Page"
+          className="topbar-btn"
+          style={{
+            ...iconButtonStyle,
+            padding: '5px 9px',
+            fontSize: '0.7rem',
+            borderColor: 'rgba(56, 189, 248, 0.35)',
+            color: '#38bdf8',
+          }}
+        >
+          <Home size={12} />
+          LANDING
+        </button>
 
         <Divider />
 

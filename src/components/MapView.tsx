@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { CHECKPOINTS, type Match } from '../data/mockData';
-import { Layers, Sparkles, UserCheck, Globe } from 'lucide-react';
+import { Layers, Sparkles, UserCheck, Globe, Mountain, Satellite, ShieldAlert } from 'lucide-react';
 
 interface MapViewProps {
   matches: Match[];
@@ -11,25 +11,58 @@ interface MapViewProps {
   onSelectMatch?: (matchId: string) => void;
 }
 
-type MapLayerType = 'dark_hd' | 'satellite_hd' | 'cyber_hd';
+export type MapLayerType = 'dark_hd' | 'satellite_hd' | 'terrain_hd' | 'cyber_hd';
 
-const LAYER_CONFIGS: Record<MapLayerType, { name: string; url: string; attribution: string; subdomains?: string[] }> = {
+export const LAYER_CONFIGS: Record<
+  MapLayerType,
+  {
+    name: string;
+    shortName: string;
+    description: string;
+    url: string;
+    attribution: string;
+    subdomains?: string[];
+    maxZoom?: number;
+    tileClass: string;
+  }
+> = {
   dark_hd: {
     name: 'TACTICAL DARK HD',
+    shortName: 'DARK TACTICAL',
+    description: 'Nocturnal vector cartography for surveillance & tracking',
     url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-    attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap',
-    subdomains: ['a', 'b', 'c', 'd']
+    attribution: '&copy; CARTO &copy; OpenStreetMap',
+    subdomains: ['a', 'b', 'c', 'd'],
+    maxZoom: 19,
+    tileClass: 'hd-crisp-tile'
   },
   satellite_hd: {
     name: 'SATELLITE RECON HD',
+    shortName: 'SATELLITE',
+    description: 'High-resolution true-color orbital imagery (Esri World Imagery)',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: '&copy; Esri, Maxar, Earthstar Geographics'
+    attribution: '&copy; Esri, Maxar, Earthstar Geographics, USDA, USGS',
+    maxZoom: 19,
+    tileClass: 'hd-satellite-tile'
+  },
+  terrain_hd: {
+    name: 'TOPOGRAPHIC TERRAIN HD',
+    shortName: 'TERRAIN',
+    description: 'Detailed elevation contours, terrain relief & topographic features',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+    attribution: '&copy; Esri, HERE, Garmin, USGS, NOAA',
+    maxZoom: 19,
+    tileClass: 'hd-terrain-tile'
   },
   cyber_hd: {
     name: 'CYBER MATRIX HD',
+    shortName: 'CYBER MATRIX',
+    description: 'Full transport infrastructure, roads, and transit routing',
     url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
     attribution: '&copy; CARTO &copy; OpenStreetMap',
-    subdomains: ['a', 'b', 'c', 'd']
+    subdomains: ['a', 'b', 'c', 'd'],
+    maxZoom: 19,
+    tileClass: 'hd-crisp-tile'
   }
 };
 
@@ -224,18 +257,32 @@ const MapController: React.FC<{
 
   // Initial bounds fit on mount to show the entire USA nationwide network
   useEffect(() => {
-    const timer = setTimeout(() => {
+    map.invalidateSize();
+    const t1 = setTimeout(() => map.invalidateSize(), 50);
+    const t2 = setTimeout(() => {
       map.invalidateSize();
       if (!isInitialFitDone.current) {
         // Continental US Bounds (NYC to LA, Seattle to Miami)
         const continentalBounds = CHECKPOINTS
-          .filter(cp => cp.state !== 'HI') // Exclude Hawaii for initial tight continental framing
+          .filter(cp => cp.state !== 'HI')
           .map(cp => [cp.lat, cp.lng]) as [number, number][];
         map.fitBounds(continentalBounds, { padding: [60, 60], maxZoom: 5.5, animate: false });
         isInitialFitDone.current = true;
       }
     }, 150);
-    return () => clearTimeout(timer);
+    const t3 = setTimeout(() => map.invalidateSize(), 400);
+
+    const handleResize = () => {
+      map.invalidateSize();
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      window.removeEventListener('resize', handleResize);
+    };
   }, [map]);
 
   useMapEvents({
@@ -393,14 +440,66 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
     return dispersedSightings.map(s => [s.dispersedLat, s.dispersedLng]);
   }, [dispersedSightings, selectedPersonId]);
 
+  const [layerNotice, setLayerNotice] = useState<string | null>(null);
+
+  const handleSwitchLayer = (layerKey: MapLayerType) => {
+    setActiveLayer(layerKey);
+    setLayerNotice(`MAP MODE: ${LAYER_CONFIGS[layerKey].name}`);
+    setTimeout(() => {
+      setLayerNotice(prev => (prev === `MAP MODE: ${LAYER_CONFIGS[layerKey].name}` ? null : prev));
+    }, 2400);
+  };
+
   const handleResetOverview = () => {
     if (mapInstanceRef.current) {
       const continentalBounds = CHECKPOINTS
         .filter(cp => cp.state !== 'HI')
         .map(cp => [cp.lat, cp.lng]) as [number, number][];
       mapInstanceRef.current.flyToBounds(continentalBounds, { padding: [60, 60], duration: 1.2 });
+      setLayerNotice('RECON CAMERA: CONTINENTAL USA OVERVIEW');
+      setTimeout(() => setLayerNotice(null), 2400);
     }
   };
+
+  // ─── Global Keyboard Shortcuts for Instant Map Layer Switching ──────────
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+
+      const key = e.key.toLowerCase();
+      if (key === '2' || key === 's') {
+        handleSwitchLayer('satellite_hd');
+      } else if (key === '3' || key === 't') {
+        handleSwitchLayer('terrain_hd');
+      } else if (key === '1' || key === 'd') {
+        handleSwitchLayer('dark_hd');
+      } else if (key === '4' || key === 'm') {
+        handleSwitchLayer('cyber_hd');
+      } else if (key === 'l') {
+        const layerKeys: MapLayerType[] = ['satellite_hd', 'terrain_hd', 'dark_hd', 'cyber_hd'];
+        setActiveLayer(prev => {
+          const idx = layerKeys.indexOf(prev);
+          const next = layerKeys[(idx + 1) % layerKeys.length];
+          setLayerNotice(`MAP MODE: ${LAYER_CONFIGS[next].name}`);
+          setTimeout(() => setLayerNotice(null), 2400);
+          return next;
+        });
+      } else if (key === 'r') {
+        handleResetOverview();
+      } else if (key === 'o') {
+        setDispersionMode(prev => {
+          const next = prev === 'orbital' ? 'wide' : 'orbital';
+          setLayerNotice(`RADIAL DISPERSION: ${next.toUpperCase()}`);
+          setTimeout(() => setLayerNotice(null), 2400);
+          return next;
+        });
+      }
+    };
+
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
 
   const currentLayerConfig = LAYER_CONFIGS[activeLayer];
   const hasActiveMatches = matches.length > 0;
@@ -451,7 +550,7 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
           keepBuffer={8}
           updateWhenIdle={false}
           updateWhenZooming={false}
-          className="hd-crisp-tile"
+          className={currentLayerConfig.tileClass}
         />
 
         <MapController
@@ -623,105 +722,128 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
         gap: '8px',
         zIndex: 50
       }}>
-        {/* Layer Selector Toggle */}
-        <div style={{ position: 'relative' }}>
+        {/* Layer Selector Bar */}
+        <div style={{
+          display: 'flex',
+          backgroundColor: 'rgba(10, 14, 20, 0.94)',
+          border: '1px solid var(--border-hairline)',
+          backdropFilter: 'blur(10px)',
+          padding: '3px',
+          gap: '3px',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.7)'
+        }}>
+          {(Object.keys(LAYER_CONFIGS) as MapLayerType[]).map(layerKey => {
+            const cfg = LAYER_CONFIGS[layerKey];
+            const isSelected = activeLayer === layerKey;
+            const keyBadge = layerKey === 'satellite_hd' ? '2·S' : layerKey === 'terrain_hd' ? '3·T' : layerKey === 'dark_hd' ? '1·D' : '4·M';
+            return (
+              <button
+                key={layerKey}
+                onClick={() => handleSwitchLayer(layerKey)}
+                title={`${cfg.description} (Shortcut: ${keyBadge.replace('·', ' or ')})`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  backgroundColor: isSelected ? 'rgba(0, 217, 163, 0.18)' : 'transparent',
+                  color: isSelected ? 'var(--accent-signal)' : 'var(--text-secondary)',
+                  border: isSelected ? '1px solid var(--accent-signal)' : '1px solid transparent',
+                  padding: '6px 10px',
+                  fontSize: '0.72rem',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontWeight: isSelected ? 700 : 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {layerKey === 'satellite_hd' && <Satellite size={13} color={isSelected ? 'var(--accent-signal)' : 'currentColor'} />}
+                {layerKey === 'terrain_hd' && <Mountain size={13} color={isSelected ? 'var(--accent-signal)' : 'currentColor'} />}
+                {layerKey === 'dark_hd' && <Layers size={13} color={isSelected ? 'var(--accent-signal)' : 'currentColor'} />}
+                {layerKey === 'cyber_hd' && <Globe size={13} color={isSelected ? 'var(--accent-signal)' : 'currentColor'} />}
+                <span>{cfg.shortName}</span>
+                <kbd style={{
+                  fontSize: '0.6rem',
+                  padding: '1px 4px',
+                  borderRadius: '2px',
+                  backgroundColor: isSelected ? 'rgba(0, 217, 163, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+                  color: isSelected ? 'var(--accent-signal)' : 'var(--text-secondary)',
+                  fontWeight: 700
+                }}>
+                  {keyBadge}
+                </kbd>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Real-Time Layer Switch HUD Banner */}
+        {layerNotice && (
+          <div style={{
+            backgroundColor: 'rgba(0, 217, 163, 0.16)',
+            border: '1px solid var(--accent-signal)',
+            color: 'var(--accent-signal)',
+            padding: '5px 12px',
+            fontSize: '0.72rem',
+            fontFamily: "'IBM Plex Mono', monospace",
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            boxShadow: '0 4px 16px rgba(0, 217, 163, 0.35)'
+          }}>
+            <span>● {layerNotice}</span>
+          </div>
+        )}
+
+        {/* Secondary Tactical Controls */}
+        <div style={{ display: 'flex', gap: '8px' }}>
+          {/* Dispersion Mode Toggle */}
           <button
-            onClick={() => setShowLayerSelector(!showLayerSelector)}
+            onClick={() => setDispersionMode(prev => prev === 'orbital' ? 'wide' : 'orbital')}
             className="button"
+            title="Toggle Wide Regional Radial Dispersion (Shortcut: O)"
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              backgroundColor: 'rgba(18, 22, 31, 0.92)',
-              backdropFilter: 'blur(6px)',
+              backgroundColor: 'rgba(10, 14, 20, 0.90)',
+              backdropFilter: 'blur(8px)',
               padding: '6px 12px',
-              fontSize: '0.72rem',
-              fontFamily: "'IBM Plex Mono', monospace"
+              fontSize: '0.7rem',
+              fontFamily: "'IBM Plex Mono', monospace",
+              color: dispersionMode === 'wide' ? 'var(--accent-signal)' : 'var(--text-secondary)',
+              border: `1px solid ${dispersionMode === 'wide' ? 'var(--accent-signal)' : 'var(--border-hairline)'}`
             }}
           >
-            <Layers size={13} color="var(--accent-signal)" />
-            <span>{currentLayerConfig.name}</span>
+            <Sparkles size={12} color="var(--accent-signal)" />
+            <span>RADIAL: {dispersionMode.toUpperCase()}</span>
+            <kbd style={{ fontSize: '0.58rem', padding: '1px 3px', backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: '2px' }}>O</kbd>
           </button>
 
-          {showLayerSelector && (
-            <div style={{
-              position: 'absolute',
-              top: '100%',
-              left: 0,
-              marginTop: '4px',
-              backgroundColor: 'var(--bg-panel)',
-              border: '1px solid var(--border-hairline)',
+          {/* Reset Overview Camera Button to Continental USA */}
+          <button
+            onClick={handleResetOverview}
+            className="button"
+            title="Reset to Continental USA Overview (Shortcut: R)"
+            style={{
               display: 'flex',
-              flexDirection: 'column',
-              zIndex: 100,
-              boxShadow: '0 12px 24px rgba(0,0,0,0.7)'
-            }}>
-              {(Object.keys(LAYER_CONFIGS) as MapLayerType[]).map(layerKey => (
-                <button
-                  key={layerKey}
-                  onClick={() => {
-                    setActiveLayer(layerKey);
-                    setShowLayerSelector(false);
-                  }}
-                  style={{
-                    background: activeLayer === layerKey ? 'var(--bg-panel-raised)' : 'transparent',
-                    color: activeLayer === layerKey ? 'var(--accent-signal)' : 'var(--text-primary)',
-                    border: 'none',
-                    padding: '8px 14px',
-                    textAlign: 'left',
-                    fontFamily: "'IBM Plex Mono', monospace",
-                    fontSize: '0.72rem',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  {LAYER_CONFIGS[layerKey].name}
-                </button>
-              ))}
-            </div>
-          )}
+              alignItems: 'center',
+              gap: '6px',
+              backgroundColor: 'rgba(10, 14, 20, 0.90)',
+              backdropFilter: 'blur(8px)',
+              padding: '6px 12px',
+              fontSize: '0.7rem',
+              fontFamily: "'IBM Plex Mono', monospace",
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-hairline)'
+            }}
+          >
+            <Globe size={12} color="var(--accent-signal)" />
+            <span>RESET USA RECON</span>
+            <kbd style={{ fontSize: '0.58rem', padding: '1px 3px', backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: '2px' }}>R</kbd>
+          </button>
         </div>
-
-        {/* Dispersion Mode Toggle */}
-        <button
-          onClick={() => setDispersionMode(prev => prev === 'orbital' ? 'wide' : 'orbital')}
-          className="button"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            backgroundColor: 'rgba(18, 22, 31, 0.92)',
-            backdropFilter: 'blur(6px)',
-            padding: '6px 12px',
-            fontSize: '0.72rem',
-            fontFamily: "'IBM Plex Mono', monospace",
-            color: dispersionMode === 'wide' ? 'var(--accent-signal)' : 'var(--text-primary)',
-            border: `1px solid ${dispersionMode === 'wide' ? 'var(--accent-signal)' : 'var(--border-hairline)'}`
-          }}
-          title="Toggle Wide Regional Radial Dispersion"
-        >
-          <Sparkles size={13} color="var(--accent-signal)" />
-          <span>RADIAL SPREAD: {dispersionMode.toUpperCase()}</span>
-        </button>
-
-        {/* Reset Overview Camera Button to Continental USA */}
-        <button
-          onClick={handleResetOverview}
-          className="button"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            backgroundColor: 'rgba(18, 22, 31, 0.92)',
-            backdropFilter: 'blur(6px)',
-            padding: '6px 12px',
-            fontSize: '0.72rem',
-            fontFamily: "'IBM Plex Mono', monospace"
-          }}
-        >
-          <Globe size={13} color="var(--accent-signal)" />
-          <span>CONTINENTAL USA OVERVIEW</span>
-        </button>
 
         {/* Selected Suspect Trajectory Mode Active Pill */}
         {selectedPersonId && (
@@ -734,7 +856,8 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
             fontFamily: "'IBM Plex Mono', monospace",
             display: 'flex',
             alignItems: 'center',
-            gap: '6px'
+            gap: '6px',
+            boxShadow: '0 4px 12px rgba(0, 217, 163, 0.25)'
           }}>
             <UserCheck size={13} />
             <span>INTERSTATE TRAJECTORY // {dispersedSightings.length} SIGHTINGS</span>
@@ -759,7 +882,7 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
         gap: '16px',
         boxShadow: '0 4px 12px rgba(0,0,0,0.6)'
       }}>
-        <div>SECTOR: <span style={{ color: 'var(--accent-signal)' }}>UNITED STATES (HOMELAND)</span></div>
+        <div>LAYER: <span style={{ color: 'var(--accent-signal)' }}>{currentLayerConfig.name}</span></div>
         <div>LAT: <span style={{ color: 'var(--accent-signal)' }}>{hudCoords.lat.toFixed(4)}°N</span></div>
         <div>LNG: <span style={{ color: 'var(--accent-signal)' }}>{Math.abs(hudCoords.lng).toFixed(4)}°W</span></div>
         <div>OPTICAL ZOOM: <span style={{ color: 'var(--accent-signal)' }}>{hudCoords.zoom.toFixed(1)}x</span></div>

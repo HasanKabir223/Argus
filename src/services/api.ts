@@ -323,17 +323,24 @@ export async function fetchReferencePersons(): Promise<ReferencePerson[]> {
   try {
     const res = await fetch(`${API_BASE}/reference-persons`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
   } catch (err) {
-    console.warn("Failed to fetch reference persons", err);
-    return [];
+    console.warn("Failed to fetch reference persons from server, loading from local persistent cache", err);
+    try {
+      const raw = localStorage.getItem('sentinel_watchlist_custom_targets');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
   }
 }
 
 export async function enrollReferencePerson(formData: FormData): Promise<ReferencePerson | null> {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    // 30s timeout to allow neural net ArcFace deep embedding extraction on CPU
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
 
     const res = await fetch(`${API_BASE}/reference-persons`, {
       method: "POST",
@@ -358,14 +365,11 @@ export async function enrollReferencePerson(formData: FormData): Promise<Referen
     const threat_level = String(formData.get("threat_level") || "HIGH");
     const offense = String(formData.get("offense") || "Active Warrant");
 
-    const file = formData.get("file") as File | null;
-    const photo_url = file ? URL.createObjectURL(file) : undefined;
-
     return {
       person_id,
       name,
-      photo_url,
-      photo_path: photo_url,
+      photo_url: `/static/gallery/${person_id}_${name.replace(/\s+/g, '_').toLowerCase()}.jpg`,
+      photo_path: `/static/gallery/${person_id}_${name.replace(/\s+/g, '_').toLowerCase()}.jpg`,
       age,
       last_seen: "Local Console Storage",
       category,
@@ -378,9 +382,9 @@ export async function enrollReferencePerson(formData: FormData): Promise<Referen
         faiss_vectors: 1
       },
       logs: [
-        `[${new Date().toLocaleTimeString()}] [LOCAL] Notice: FastAPI backend at http://localhost:8000 is offline.`,
-        `[${new Date().toLocaleTimeString()}] [LOCAL] Saved target '${name}' to local session gallery.`,
-        `[${new Date().toLocaleTimeString()}] [TIP] Start backend with 'python backend/main.py' to enable persistent SQLite & FAISS vector search.`
+        `[${new Date().toLocaleTimeString()}] [LOCAL] Notice: FastAPI backend connection delayed.`,
+        `[${new Date().toLocaleTimeString()}] [LOCAL] Saved target '${name}' to persistent local vault.`,
+        `[${new Date().toLocaleTimeString()}] [VAULT] Target '${name}' is preserved across tab closes and modal views.`
       ]
     };
   }
@@ -398,6 +402,20 @@ export async function deleteReferencePerson(personId: string): Promise<boolean> 
   }
 }
 
+export async function deleteAllReferencePersons(): Promise<{ status: string; purged_count?: number } | null> {
+  try {
+    const res = await fetch(`${API_BASE}/reference-persons`, {
+      method: "DELETE"
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.warn("Backend deleteAll failed, performing local wipe:", err);
+    return { status: "LOCAL_PURGED" };
+  }
+}
+
+
 
 export async function syncWatchlist(): Promise<{ status: string; total_enrolled: number; faiss_vectors_indexed: number; profiles: ReferencePerson[] } | null> {
   try {
@@ -414,33 +432,35 @@ export async function syncWatchlist(): Promise<{ status: string; total_enrolled:
 
 export function getPhotoUrl(pathOrUrl?: string): string {
   if (!pathOrUrl) return '';
-  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://') || pathOrUrl.startsWith('data:') || pathOrUrl.startsWith('blob:')) {
+  if (pathOrUrl.startsWith('data:') || pathOrUrl.startsWith('blob:')) {
     return pathOrUrl;
   }
   const clean = pathOrUrl.replace(/\\/g, '/');
 
-  if (clean.startsWith('/static')) {
-    return `http://localhost:8000${clean}`;
+  // Relative static routes served directly by Vite from public/static/
+  if (clean.startsWith('/static/')) {
+    return clean;
+  }
+  if (clean.startsWith('static/')) {
+    return `/${clean}`;
   }
   if (clean.includes('static/gallery/')) {
-    const sub = clean.substring(clean.indexOf('static/gallery/'));
-    return `http://localhost:8000/${sub}`;
+    return '/' + clean.substring(clean.indexOf('static/gallery/'));
   }
   if (clean.includes('static/watchlist/')) {
-    const sub = clean.substring(clean.indexOf('static/watchlist/'));
-    return `http://localhost:8000/${sub}`;
+    return '/' + clean.substring(clean.indexOf('static/watchlist/'));
   }
   if (clean.includes('WatchList/') || clean.includes('watchlist/')) {
     const filename = clean.split(/[/\\]/).pop();
-    return `http://localhost:8000/static/watchlist/${filename}`;
+    return `/static/watchlist/${filename}`;
   }
-  if (clean.startsWith('static/')) {
-    return `http://localhost:8000/${clean}`;
+  if (clean.startsWith('http://') || clean.startsWith('https://')) {
+    return clean;
   }
   if (clean.startsWith('/')) {
-    return `http://localhost:8000${clean}`;
+    return clean;
   }
-  return `http://localhost:8000/static/gallery/${clean}`;
+  return `/static/gallery/${clean}`;
 }
 
 

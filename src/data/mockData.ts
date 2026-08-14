@@ -52,10 +52,6 @@ export const CHECKPOINTS: Checkpoint[] = [
   { id: 'cp-15', name: 'Daniel K. Inouye International', city: 'Honolulu', state: 'HI', lat: 21.3245, lng: -157.9251, status: 'active' }
 ];
 
-/**
- * Criminal Watchlist Dossiers
- * Populated dynamically via SQLite database and FAISS AI Vector Gallery.
- */
 export const DEFAULT_WATCHLIST_PERSONS: DefaultReferencePerson[] = [];
 
 /**
