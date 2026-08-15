@@ -12,6 +12,7 @@ import { AuditLogPanel, type AuditEntry } from './components/AuditLogPanel';
 import { ShortcutsOverlay } from './components/ShortcutsOverlay';
 import { LoadingScreen } from './components/LoadingScreen';
 import { CctvStudioModal } from './components/CctvStudioModal';
+import { CctvIngestionModal } from './components/CctvIngestionModal';
 import { WatchlistGalleryModal } from './components/WatchlistGalleryModal';
 import { fetchEvents, updateEventStatus, clearAllEvents, deleteEvent, type CctvMatch } from './services/api';
 
@@ -29,6 +30,7 @@ function App() {
   const [showAuditLog, setShowAuditLog] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showCctvStudio, setShowCctvStudio] = useState(false);
+  const [showCctvIngestion, setShowCctvIngestion] = useState(false);
   const [showWatchlist, setShowWatchlist] = useState(false);
   const [replayTime, setReplayTime] = useState<number | null>(null);
 
@@ -255,6 +257,7 @@ function App() {
         onOpenAuditLog={() => setShowAuditLog(true)}
         onOpenShortcuts={() => setShowShortcuts(true)}
         onOpenCctvStudio={() => setShowCctvStudio(true)}
+        onOpenCctvIngestion={() => setShowCctvIngestion(true)}
         onOpenWatchlist={() => setShowWatchlist(true)}
         viewMode={viewMode}
         onToggleViewMode={() => setViewMode(prev => prev === 'globe' ? 'map' : 'globe')}
@@ -289,6 +292,16 @@ function App() {
         onScrub={setReplayTime}
       />
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
+      {/* CCTV Ingestion Feature Modal */}
+      {showCctvIngestion && (
+        <CctvIngestionModal
+          onClose={() => {
+            setShowCctvIngestion(false);
+            syncBackendEvents();
+          }}
+        />
+      )}
 
       {/* CCTV Surveillance Studio Modal */}
       {showCctvStudio && (

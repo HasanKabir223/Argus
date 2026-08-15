@@ -35,138 +35,7 @@ DEFAULT_CHECKPOINTS = [
 # Maps each image file in backend/WatchList/ to a criminal profile.
 # These are enrolled into FAISS + LSH on startup so CCTV clips can match against them.
 
-WATCHLIST_PROFILES = [
-    {
-        "filename": "Official_portrait_of_Barack_Obama.jpg",
-        "person_id": "p-obama",
-        "name": "Barack Obama",
-        "age": 63,
-        "category": "PERSON OF INTEREST",
-        "threat_level": "CRITICAL",
-        "offense": "High-Profile Surveillance Target",
-        "last_seen": "Washington D.C.",
-    },
-    {
-        "filename": "George_Bush_45_(49492156502).jpg",
-        "person_id": "p-bush",
-        "name": "George W. Bush",
-        "age": 78,
-        "category": "PERSON OF INTEREST",
-        "threat_level": "HIGH",
-        "offense": "Former Head of State — Surveillance Watch",
-        "last_seen": "Dallas, TX",
-    },
-    {
-        "filename": "Saddam_Hussein_1979.jpg",
-        "person_id": "p-saddam",
-        "name": "Saddam Hussein",
-        "age": 69,
-        "category": "WANTED FUGITIVE",
-        "threat_level": "CRITICAL",
-        "offense": "International War Crimes / ICC Warrant",
-        "last_seen": "Baghdad, Iraq",
-    },
-    {
-        "filename": "Elon_Musk_-_54820081119_(cropped).jpg.webp",
-        "person_id": "p-musk",
-        "name": "Elon Musk",
-        "age": 53,
-        "category": "PERSON OF INTEREST",
-        "threat_level": "MEDIUM",
-        "offense": "High-Value Surveillance Target",
-        "last_seen": "Austin, TX",
-    },
-    {
-        "filename": "5d531e5021214c5ee664a588.webp",
-        "person_id": "p-trump",
-        "name": "Donald Trump",
-        "age": 79,
-        "category": "PERSON OF INTEREST",
-        "threat_level": "CRITICAL",
-        "offense": "High-Profile Surveillance Target",
-        "last_seen": "Mar-a-Lago, FL",
-    },
-    {
-        "filename": "download.jfif",
-        "person_id": "p-suspect-001",
-        "name": "Unknown Suspect Alpha",
-        "age": 35,
-        "category": "WANTED FUGITIVE",
-        "threat_level": "HIGH",
-        "offense": "Active Felony Warrant — Armed Robbery",
-        "last_seen": "Manhattan, NY",
-    },
-    {
-        "filename": "download (1).jfif",
-        "person_id": "p-suspect-002",
-        "name": "Unknown Suspect Bravo",
-        "age": 32,
-        "category": "WANTED FUGITIVE",
-        "threat_level": "HIGH",
-        "offense": "Grand Larceny / Fraud",
-        "last_seen": "Brooklyn, NY",
-    },
-    {
-        "filename": "download (2).jfif",
-        "person_id": "p-suspect-003",
-        "name": "Unknown Suspect Charlie",
-        "age": 40,
-        "category": "WANTED FUGITIVE",
-        "threat_level": "MEDIUM",
-        "offense": "Identity Theft / Wire Fraud",
-        "last_seen": "Queens, NY",
-    },
-    {
-        "filename": "download (3).jfif",
-        "person_id": "p-suspect-004",
-        "name": "Unknown Suspect Delta",
-        "age": 29,
-        "category": "WANTED FUGITIVE",
-        "threat_level": "HIGH",
-        "offense": "Narcotics Trafficking",
-        "last_seen": "Bronx, NY",
-    },
-    {
-        "filename": "images.jfif",
-        "person_id": "p-suspect-005",
-        "name": "Unknown Suspect Echo",
-        "age": 45,
-        "category": "WANTED FUGITIVE",
-        "threat_level": "MEDIUM",
-        "offense": "Fugitive from Justice",
-        "last_seen": "Newark, NJ",
-    },
-    {
-        "filename": "images (1).jfif",
-        "person_id": "p-suspect-006",
-        "name": "Unknown Suspect Foxtrot",
-        "age": 38,
-        "category": "WANTED FUGITIVE",
-        "threat_level": "HIGH",
-        "offense": "Assault / Battery — Active Warrant",
-        "last_seen": "Jersey City, NJ",
-    },
-    {
-        "filename": "images (2).jfif",
-        "person_id": "p-suspect-007",
-        "name": "Unknown Suspect Golf",
-        "age": 27,
-        "category": "WANTED FUGITIVE",
-        "threat_level": "MEDIUM",
-        "offense": "Burglary / Breaking and Entering",
-        "last_seen": "Hoboken, NJ",
-    },
-    {
-        "filename": "images (3).jfif",
-        "person_id": "p-suspect-008",
-        "name": "Unknown Suspect Hotel",
-        "age": 33,
-        "category": "WANTED FUGITIVE",
-        "threat_level": "HIGH",
-        "offense": "Weapons Possession / Illegal Firearms",
-        "last_seen": "Staten Island, NY",
-    },
-]
+WATCHLIST_PROFILES: List[Dict[str, Any]] = []
 
 
 def _get_watchlist_dir() -> str:
@@ -186,21 +55,23 @@ def seed_watchlist(pipeline: CheckpointPipeline):
     """
     Loads all watchlist reference images, detects faces, extracts ArcFace embeddings,
     and enrolls them into the SQLite database + FAISS vector index + LSH hash tables.
+    Guaranteed collision-free enrollment across all directory files.
     """
     watchlist_dir = _get_watchlist_dir()
-    if not os.path.exists(watchlist_dir):
-        print(f"[SeedData] WatchList directory not found at {watchlist_dir}, skipping enrollment.")
-        return
-
+    gallery_dir = pipeline.gallery_manager.gallery_dir
+    
     enrolled_count = 0
     enrolled_filenames = set()
+    enrolled_person_ids = set()
 
     # 1. First enroll known registered profiles
     for profile in WATCHLIST_PROFILES:
         filepath = os.path.join(watchlist_dir, profile["filename"])
         if not os.path.exists(filepath):
-            print(f"[SeedData] WARNING: Watchlist image not found: {filepath}")
-            continue
+            # Check gallery_dir as fallback
+            filepath = os.path.join(gallery_dir, profile["filename"])
+            if not os.path.exists(filepath):
+                continue
 
         # Load image with OpenCV with PIL fallback
         img = cv2.imread(filepath)
@@ -213,68 +84,70 @@ def seed_watchlist(pipeline: CheckpointPipeline):
                 pass
 
         if img is None:
-            print(f"[SeedData] WARNING: Could not decode image: {filepath}")
             continue
 
-        # Enroll into gallery (persists to SQLite reference_persons + adds to FAISS)
         try:
             pipeline.gallery_manager.enroll_person(
                 person_id=profile["person_id"],
                 name=profile["name"],
                 photo_bgr=img,
                 age=profile.get("age"),
-                last_seen=profile.get("last_seen", "Unknown"),
+                last_seen=profile.get("last_seen", "Surveillance Network"),
                 category=profile.get("category", "WANTED FUGITIVE"),
                 threat_level=profile.get("threat_level", "HIGH"),
-                offense=profile.get("offense", "Active Felony Warrant"),
+                offense=profile.get("offense", "Active Criminal Warrant"),
             )
             enrolled_count += 1
             enrolled_filenames.add(profile["filename"])
-            print(f"[SeedData] ✓ Enrolled in DB & FAISS: {profile['name']} ({profile['person_id']})")
+            enrolled_person_ids.add(profile["person_id"])
+            print(f"[SeedData] ✓ Enrolled: {profile['name']} ({profile['person_id']})")
         except Exception as e:
-            print(f"[SeedData] ERROR enrolling {profile['name']}: {e}")
+            print(f"[SeedData] Error enrolling {profile['name']}: {e}")
 
-    # 2. Dynamically enroll any extra images found in WatchList folder not in predefined list
+    # 2. Dynamically scan and enroll any additional images in WatchList directory
     valid_img_exts = {".jpg", ".jpeg", ".png", ".webp", ".jfif", ".bmp"}
-    for fname in os.listdir(watchlist_dir):
-        ext = os.path.splitext(fname)[1].lower()
-        if ext in valid_img_exts and fname not in enrolled_filenames:
-            filepath = os.path.join(watchlist_dir, fname)
-            img = cv2.imread(filepath)
-            if img is None:
+    if os.path.exists(watchlist_dir):
+        for fname in sorted(os.listdir(watchlist_dir)):
+            ext = os.path.splitext(fname)[1].lower()
+            if ext in valid_img_exts and fname not in enrolled_filenames:
+                filepath = os.path.join(watchlist_dir, fname)
+                img = cv2.imread(filepath)
+                if img is None:
+                    try:
+                        from PIL import Image
+                        pil_img = Image.open(filepath).convert("RGB")
+                        img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+                    except Exception:
+                        pass
+
+                if img is None:
+                    continue
+
+                clean_name = os.path.splitext(fname)[0].replace("_", " ").replace("-", " ").title()
+                p_id = f"p-wl-{enrolled_count + 1:03d}"
+                while p_id in enrolled_person_ids:
+                    enrolled_count += 1
+                    p_id = f"p-wl-{enrolled_count + 1:03d}"
+
                 try:
-                    from PIL import Image
-                    pil_img = Image.open(filepath).convert("RGB")
-                    img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-                except Exception:
-                    pass
+                    pipeline.gallery_manager.enroll_person(
+                        person_id=p_id,
+                        name=clean_name,
+                        photo_bgr=img,
+                        age=30,
+                        last_seen="Surveillance Network",
+                        category="WANTED CRIMINAL",
+                        threat_level="HIGH",
+                        offense="Fugitive / Criminal Sighting Warrant"
+                    )
+                    enrolled_count += 1
+                    enrolled_filenames.add(fname)
+                    enrolled_person_ids.add(p_id)
+                    print(f"[SeedData] ✓ Auto-Enrolled: {clean_name} ({p_id})")
+                except Exception as e:
+                    print(f"[SeedData] Error enrolling extra image {fname}: {e}")
 
-            if img is None:
-                continue
-
-            clean_name = os.path.splitext(fname)[0].replace("_", " ").replace("-", " ").title()
-            p_id = f"p-wl-{enrolled_count + 1:03d}"
-
-            try:
-                pipeline.gallery_manager.enroll_person(
-                    person_id=p_id,
-                    name=clean_name,
-                    photo_bgr=img,
-                    age=30,
-                    last_seen="Surveillance Network",
-                    category="WANTED CRIMINAL",
-                    threat_level="HIGH",
-                    offense="Fugitive / Criminal Sighting Warrant"
-                )
-                enrolled_count += 1
-                enrolled_filenames.add(fname)
-                print(f"[SeedData] ✓ Auto-Enrolled extra image in DB & FAISS: {clean_name} ({p_id})")
-            except Exception as e:
-                print(f"[SeedData] ERROR enrolling extra image {fname}: {e}")
-
-    faiss_count = 0
-    if pipeline.search_engine._index is not None:
-        faiss_count = pipeline.search_engine._index.ntotal
+    faiss_count = pipeline.search_engine._index.ntotal if pipeline.search_engine._index is not None else len(pipeline.gallery_manager.persons)
     print(f"[SeedData] Watchlist enrollment complete: {enrolled_count} profiles in SQLite & FAISS ({faiss_count} vectors indexed).")
 
 

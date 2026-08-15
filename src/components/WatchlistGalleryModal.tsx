@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Shield, Plus, Upload, X, Search, RefreshCw,
-  Trash2, Eye, AlertTriangle, Check, Fingerprint,
-  MapPin, Scan, ShieldAlert, FileText, Terminal,
-  Cpu, Zap, Clock, CheckCircle2, ChevronDown, ChevronUp, Image as ImageIcon
+  Trash2, Eye, AlertTriangle, AlertOctagon, Check, Fingerprint,
+  MapPin, Terminal,
+  Zap, ChevronDown, ChevronUp, Image as ImageIcon,
+  ZoomIn, ZoomOut, UserPlus
 } from 'lucide-react';
 import {
   fetchReferencePersons, enrollReferencePerson, syncWatchlist,
-  deleteReferencePerson, getPhotoUrl,
+  deleteReferencePerson, deleteAllReferencePersons, getPhotoUrl,
   type ReferencePerson
 } from '../services/api';
 import { DEFAULT_WATCHLIST_PERSONS } from '../data/mockData';
@@ -18,11 +19,75 @@ interface WatchlistGalleryModalProps {
 }
 
 const LOCAL_CACHE_KEY = 'sentinel_watchlist_custom_targets';
+const IMAGE_VAULT_KEY = 'sentinel_watchlist_images_vault';
+const PURGED_FLAG_KEY = 'sentinel_watchlist_purged';
+
+export function getImageVault(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(IMAGE_VAULT_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveVaultImage(personId: string, dataUrl: string) {
+  if (!personId || !dataUrl) return;
+  try {
+    const vault = getImageVault();
+    vault[personId] = dataUrl;
+    // Keep last 100 images
+    const keys = Object.keys(vault);
+    if (keys.length > 100) {
+      delete vault[keys[0]];
+    }
+    localStorage.setItem(IMAGE_VAULT_KEY, JSON.stringify(vault));
+  } catch (e) {
+    console.warn('Image vault save warning:', e);
+  }
+}
+
+export function getVaultImage(personId?: string): string | null {
+  if (!personId) return null;
+  try {
+    const vault = getImageVault();
+    return vault[personId] || null;
+  } catch {
+    return null;
+  }
+}
 
 function getCachedPersons(): ReferencePerson[] {
   try {
+    const isPurged = localStorage.getItem(PURGED_FLAG_KEY) === 'true';
+    if (isPurged) {
+      return [];
+    }
     const raw = localStorage.getItem(LOCAL_CACHE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const cachedList: ReferencePerson[] = raw ? JSON.parse(raw) : [];
+
+    // Purge any legacy hardcoded mock profiles
+    const hardcodedIds = new Set([
+      'p-obama', 'p-bush', 'p-saddam', 'p-musk', 'p-trump', 'p-zuck', 'p-kirk',
+      'p-suspect-001', 'p-suspect-002', 'p-suspect-003', 'p-suspect-004',
+      'p-suspect-005', 'p-suspect-006', 'p-suspect-007', 'p-suspect-008'
+    ]);
+
+    const sanitized = cachedList.filter(p => !hardcodedIds.has(p.person_id));
+    if (sanitized.length !== cachedList.length) {
+      localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(sanitized));
+    }
+
+    const vault = getImageVault();
+    return sanitized.map(p => {
+      const vaultPhoto = vault[p.person_id];
+      const hasBase64 = p.photo_url && p.photo_url.startsWith('data:');
+      return {
+        ...p,
+        photo_url: hasBase64 ? p.photo_url : (vaultPhoto || p.photo_url || p.photo_path),
+        photo_path: (p.photo_path && p.photo_path.startsWith('data:')) ? p.photo_path : (vaultPhoto || p.photo_path || p.photo_url),
+      };
+    });
   } catch {
     return [];
   }
@@ -31,6 +96,15 @@ function getCachedPersons(): ReferencePerson[] {
 function saveCachedPersons(items: ReferencePerson[]) {
   try {
     localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(items));
+    if (items.length > 0) {
+      localStorage.removeItem(PURGED_FLAG_KEY);
+    }
+    items.forEach(p => {
+      const img = p.photo_url || p.photo_path;
+      if (img && img.startsWith('data:')) {
+        saveVaultImage(p.person_id, img);
+      }
+    });
   } catch (e) {
     console.warn('LocalStorage save warning:', e);
   }
@@ -38,8 +112,8 @@ function saveCachedPersons(items: ReferencePerson[]) {
 
 /**
  * Rapid Client-Side Image Optimizer
- * Downsamples high-resolution photos (e.g. 10MB phone camera shots) to max 800px in ~8ms
- * before network transmission, preventing timeouts and making upload instantaneous.
+ * Downsamples high-resolution photos to max 800px and returns a permanent Base64 Data URL
+ * that NEVER expires across modal closes or browser reloads.
  */
 async function optimizeImageFile(file: File): Promise<{ optimizedFile: File; previewUrl: string; originalSizeKb: number; optimizedSizeKb: number }> {
   const originalSizeKb = Math.round(file.size / 1024);
@@ -68,42 +142,41 @@ async function optimizeImageFile(file: File): Promise<{ optimizedFile: File; pre
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(img, 0, 0, w, h);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
           canvas.toBlob(
             (blob) => {
               if (blob) {
                 const optimizedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", { type: 'image/jpeg' });
                 const optimizedSizeKb = Math.round(optimizedFile.size / 1024);
-                const previewUrl = URL.createObjectURL(blob);
-                resolve({ optimizedFile, previewUrl, originalSizeKb, optimizedSizeKb });
+                resolve({ optimizedFile, previewUrl: dataUrl, originalSizeKb, optimizedSizeKb });
               } else {
-                const fallbackUrl = URL.createObjectURL(file);
-                resolve({ optimizedFile: file, previewUrl: fallbackUrl, originalSizeKb, optimizedSizeKb: originalSizeKb });
+                resolve({ optimizedFile: file, previewUrl: dataUrl, originalSizeKb, optimizedSizeKb: originalSizeKb });
               }
             },
             'image/jpeg',
             0.88
           );
         } else {
-          const fallbackUrl = URL.createObjectURL(file);
+          const fallbackUrl = (e.target?.result as string) || '';
           resolve({ optimizedFile: file, previewUrl: fallbackUrl, originalSizeKb, optimizedSizeKb: originalSizeKb });
         }
       };
       img.onerror = () => {
-        const fallbackUrl = URL.createObjectURL(file);
+        const fallbackUrl = (e.target?.result as string) || '';
         resolve({ optimizedFile: file, previewUrl: fallbackUrl, originalSizeKb, optimizedSizeKb: originalSizeKb });
       };
       img.src = e.target?.result as string;
     };
     reader.onerror = () => {
-      const fallbackUrl = URL.createObjectURL(file);
-      resolve({ optimizedFile: file, previewUrl: fallbackUrl, originalSizeKb, optimizedSizeKb: originalSizeKb });
+      resolve({ optimizedFile: file, previewUrl: '', originalSizeKb, optimizedSizeKb: originalSizeKb });
     };
     reader.readAsDataURL(file);
   });
 }
 
 export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ onClose, onSelectPerson }) => {
-  const [persons, setPersons] = useState<ReferencePerson[]>([]);
+  // Synchronously initialize from local storage cache so there is 0ms delay and no blank screen
+  const [persons, setPersons] = useState<ReferencePerson[]>(() => getCachedPersons());
   const [query, setQuery] = useState('');
   const [showEnrollForm, setShowEnrollForm] = useState(false);
   const [isEnrolling, setIsEnrolling] = useState(false);
@@ -117,13 +190,18 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
   const [showLogsHUD, setShowLogsHUD] = useState<boolean>(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  // Detailed Preview Lightbox Target
+  // Detailed Preview Lightbox Target & Zoom State
   const [previewTarget, setPreviewTarget] = useState<ReferencePerson | null>(null);
+  const [previewZoom, setPreviewZoom] = useState<number>(1.0);
 
   // Target ID queued for delete confirmation
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<ReferencePerson | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+
+  // Bulk Purge All State
+  const [showDeleteAllModal, setShowDeleteAllModal] = useState<boolean>(false);
+  const [isPurgingAll, setIsPurgingAll] = useState<boolean>(false);
 
   // Form State
   const [name, setName] = useState('');
@@ -156,32 +234,93 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
   };
 
   const loadPersons = async () => {
-    const backendList = await fetchReferencePersons();
+    const isPurged = localStorage.getItem(PURGED_FLAG_KEY) === 'true';
+
+    // 1. First ensure cached targets are in state
     const cached = getCachedPersons();
+    if (cached.length > 0) {
+      setPersons(cached);
+    } else if (isPurged) {
+      setPersons([]);
+    }
 
-    const map = new Map<string, ReferencePerson>();
-    // Seed defaults first so they always appear as a baseline
-    DEFAULT_WATCHLIST_PERSONS.forEach(p => map.set(p.person_id, {
-      person_id: p.person_id,
-      name: p.name,
-      photo_url: p.photo_url,
-      photo_path: p.photo_path,
-      age: p.age,
-      last_seen: p.last_seen,
-      category: p.category,
-      threat_level: p.threat_level,
-      offense: p.offense,
-      case_id: p.case_id,
-      warrant_status: p.warrant_status,
-    }));
-    // Layer cached data on top (overrides defaults for matching IDs)
-    cached.forEach(p => map.set(p.person_id, p));
-    // Layer backend data on top (highest priority)
-    backendList.forEach(p => map.set(p.person_id, p));
+    // 2. Fetch from backend database
+    const backendList = await fetchReferencePersons();
+    const vault = getImageVault();
 
-    const merged = Array.from(map.values());
-    setPersons(merged);
-    addLog(`[GALLERY] Loaded ${merged.length} target dossiers from SQLite and FAISS.`);
+    const hardcodedIds = new Set([
+      'p-obama', 'p-bush', 'p-saddam', 'p-musk', 'p-trump', 'p-zuck', 'p-kirk',
+      'p-suspect-001', 'p-suspect-002', 'p-suspect-003', 'p-suspect-004',
+      'p-suspect-005', 'p-suspect-006', 'p-suspect-007', 'p-suspect-008'
+    ]);
+
+    const realBackendList = (backendList || []).filter(p => !hardcodedIds.has(p.person_id));
+
+    if (realBackendList.length > 0) {
+      const mergedMap = new Map<string, ReferencePerson>();
+
+      // Seed with local cache (preserves any custom offline enrollments)
+      cached.forEach(p => mergedMap.set(p.person_id, p));
+
+      // Merge backend profiles
+      realBackendList.forEach(p => {
+        const existing = mergedMap.get(p.person_id);
+        const vaultPhoto = vault[p.person_id];
+        const resolvedPhoto = vaultPhoto || (existing?.photo_url?.startsWith('data:') ? existing.photo_url : null) || p.photo_url || p.photo_path;
+
+        mergedMap.set(p.person_id, {
+          ...existing,
+          ...p,
+          photo_url: resolvedPhoto,
+          photo_path: resolvedPhoto || p.photo_path,
+        });
+      });
+
+      const mergedList = Array.from(mergedMap.values());
+      setPersons(mergedList);
+      saveCachedPersons(mergedList);
+      addLog(`[GALLERY] Loaded ${mergedList.length} target dossiers from SQLite and FAISS database.`);
+    } else if (cached.length > 0) {
+      setPersons(cached);
+      addLog(`[GALLERY] Restored ${cached.length} target dossiers from local vault storage.`);
+    } else {
+      setPersons([]);
+      addLog(`[GALLERY] Watchlist database is clean (0 enrolled targets).`);
+    }
+  };
+
+  const handlePurgeAll = async () => {
+    setIsPurgingAll(true);
+    const targetCount = persons.length;
+    addLog(`[PURGE ALL] Initiating complete wipe of ${targetCount} suspect profiles across SQLite, FAISS, and disk storage...`);
+
+    try {
+      await deleteAllReferencePersons();
+
+      // Wipe local cache & image vault
+      localStorage.setItem(PURGED_FLAG_KEY, 'true');
+      localStorage.setItem(LOCAL_CACHE_KEY, '[]');
+      localStorage.removeItem(IMAGE_VAULT_KEY);
+
+      // Clear React state
+      setPersons([]);
+      setPreviewTarget(null);
+      setDeleteConfirmTarget(null);
+
+      addLog(`[SQLITE] Wiped 'reference_persons' table in SQLite database.`);
+      addLog(`[FAISS] Vector search engine reset to 0 active vectors.`);
+      addLog(`[VAULT] Cleared Base64 image cache vault.`);
+      addLog(`[COMPLETE] Watchlist database is now completely empty.`);
+
+      setIsPurgingAll(false);
+      setShowDeleteAllModal(false);
+      showTemporaryNotice(`✓ Successfully purged all ${targetCount} suspects, FAISS vectors, and database dossiers`);
+    } catch (err: any) {
+      setIsPurgingAll(false);
+      setShowDeleteAllModal(false);
+      addLog(`[ERROR] Purge failed: ${err?.message || err}`);
+      showTemporaryNotice(`Local gallery wiped, backend will sync on restart`);
+    }
   };
 
   const showTemporaryNotice = (msg: string) => {
@@ -192,26 +331,29 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      addLog(`[FILE] Selected '${file.name}' (${Math.round(file.size / 1024)} KB). Preparing preview...`);
+      addLog(`[FILE] Selected '${file.name}' (${Math.round(file.size / 1024)} KB). Preparing permanent preview...`);
       const { optimizedFile, previewUrl: pUrl, originalSizeKb, optimizedSizeKb } = await optimizeImageFile(file);
       setSelectedFile(optimizedFile);
       setPreviewUrl(pUrl);
       setEnrollError(null);
 
-      // Auto-populate name & ID from filename if name is empty
+      // Auto-populate name & unique ID from filename
+      const rawBase = file.name
+        .replace(/\.[^/.]+$/, '')
+        .replace(/[-_]/g, ' ')
+        .replace(/[()]/g, '')
+        .trim();
+      
+      const autoName = rawBase ? rawBase.replace(/\b\w/g, l => l.toUpperCase()) : 'New Suspect';
+      const cleanSlug = autoName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+      const uniqueSuffix = Math.random().toString(36).substring(2, 6);
+      const generatedId = `p-${cleanSlug || 'target'}-${uniqueSuffix}`;
+
       if (!name.trim()) {
-        const cleanBase = file.name
-          .replace(/\.[^/.]+$/, '')
-          .replace(/[-_()0-9]/g, ' ')
-          .trim();
-        if (cleanBase.length > 1) {
-          const autoName = cleanBase.replace(/\b\w/g, l => l.toUpperCase());
-          setName(autoName);
-          if (!personId.trim()) {
-            setPersonId(`p-${autoName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`);
-          }
-        }
+        setName(autoName);
       }
+      // Always provide a unique Person ID so multiple uploads never collide
+      setPersonId(generatedId);
 
       if (originalSizeKb > optimizedSizeKb) {
         const msg = `Downscaled from ${originalSizeKb} KB to ${optimizedSizeKb} KB (Instant Fast Stream)`;
@@ -234,7 +376,13 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
       return;
     }
 
-    const cleanPersonId = personId.trim() || `p-${cleanName.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now().toString().slice(-4)}`;
+    // Guarantee unique Person ID
+    let cleanPersonId = personId.trim();
+    if (!cleanPersonId) {
+      const slug = cleanName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+      const uniqueSuffix = Math.random().toString(36).substring(2, 6) + '-' + Date.now().toString().slice(-4);
+      cleanPersonId = `p-${slug || 'target'}-${uniqueSuffix}`;
+    }
 
     setIsEnrolling(true);
     setEnrollStep(1);
@@ -259,6 +407,11 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
     setEnrollStep(2);
     addLog(`[STEP 2/4] Transmitting buffer payload to FastAPI AI Services Layer...`);
 
+    // If we have a permanent Base64 preview image, immediately store into the persistent vault
+    if (previewUrl && previewUrl.startsWith('data:')) {
+      saveVaultImage(cleanPersonId, previewUrl);
+    }
+
     try {
       setEnrollStep(3);
       addLog(`[STEP 3/4] Extracting 64-D ArcFace deep vector embedding & L2 normalizing...`);
@@ -272,14 +425,21 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
       setEnrollStep(0);
 
       if (created) {
-        // Guarantee photo preview works immediately with blob preview or backend URL
+        const savedPhoto = (previewUrl && previewUrl.startsWith('data:')) ? previewUrl : (created.photo_url || created.photo_path);
+
         const enriched: ReferencePerson = {
           ...created,
-          photo_url: created.photo_url || previewUrl || (selectedFile ? URL.createObjectURL(selectedFile) : undefined),
-          photo_path: created.photo_path || previewUrl || (selectedFile ? URL.createObjectURL(selectedFile) : undefined),
+          person_id: cleanPersonId,
+          name: cleanName,
+          age,
+          category,
+          threat_level: threatLevel,
+          offense: offense || 'Active Criminal Warrant',
+          photo_url: savedPhoto,
+          photo_path: savedPhoto || created.photo_path,
         };
 
-        // Cache locally so it is never lost across refreshes
+        // Cache locally so it is NEVER lost across modal closes or browser reloads
         const currentCached = getCachedPersons();
         const updatedCached = [enriched, ...currentCached.filter(p => p.person_id !== enriched.person_id)];
         saveCachedPersons(updatedCached);
@@ -306,7 +466,7 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
         setPreviewUrl(null);
         setImageCompressionNotice(null);
 
-        showTemporaryNotice(`✓ Target ${cleanName} (${cleanPersonId}) successfully enrolled and visible in Watchlist`);
+        showTemporaryNotice(`✓ Target ${cleanName} (${cleanPersonId}) successfully enrolled into Watchlist`);
       } else {
         setEnrollError('Failed to save to database. Please check connection and try again.');
         addLog(`[ERROR] Server returned empty response for target ${cleanPersonId}`);
@@ -326,16 +486,22 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
     await deleteReferencePerson(target.person_id);
     setIsDeleting(false);
 
-    // Update state & local cache
+    // Purge from state, local cache, and image vault
     setPersons(prev => prev.filter(p => p.person_id !== target.person_id));
     const cached = getCachedPersons().filter(p => p.person_id !== target.person_id);
     saveCachedPersons(cached);
+
+    try {
+      const vault = getImageVault();
+      delete vault[target.person_id];
+      localStorage.setItem(IMAGE_VAULT_KEY, JSON.stringify(vault));
+    } catch {}
 
     setDeleteConfirmTarget(null);
     if (previewTarget?.person_id === target.person_id) {
       setPreviewTarget(null);
     }
-    addLog(`[PURGE] ✓ Purged target ${target.person_id} and rebuilt FAISS vector index.`);
+    addLog(`[PURGE] ✓ Purged target ${target.person_id} from database and vault.`);
     showTemporaryNotice(`Target ${target.name} (${target.person_id}) purged from Database & FAISS Index`);
   };
 
@@ -457,6 +623,43 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
           >
             <Plus size={14} />
             {showEnrollForm ? 'BACK TO GALLERY' : 'ENROLL NEW TARGET'}
+          </button>
+
+          {/* PURGE ALL / DELETE ALL SUSPECTS BUTTON */}
+          <button
+            onClick={() => setShowDeleteAllModal(true)}
+            disabled={persons.length === 0 || isPurgingAll}
+            title={persons.length === 0 ? "No suspects to delete" : "Purge all suspect dossiers, FAISS vectors, and images"}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              backgroundColor: persons.length === 0 ? 'rgba(255, 71, 87, 0.05)' : 'rgba(255, 71, 87, 0.14)',
+              color: persons.length === 0 ? 'var(--text-secondary)' : 'var(--accent-alert)',
+              border: '1px solid ' + (persons.length === 0 ? 'var(--border-hairline)' : 'rgba(255, 71, 87, 0.55)'),
+              padding: '6px 13px',
+              fontSize: '0.75rem',
+              fontFamily: "'IBM Plex Mono', monospace",
+              fontWeight: 700,
+              cursor: persons.length === 0 || isPurgingAll ? 'not-allowed' : 'pointer',
+              opacity: persons.length === 0 ? 0.5 : 1,
+              transition: 'all 0.15s ease'
+            }}
+            onMouseEnter={e => {
+              if (persons.length > 0) {
+                e.currentTarget.style.backgroundColor = 'rgba(255, 71, 87, 0.28)';
+                e.currentTarget.style.borderColor = 'var(--accent-alert)';
+              }
+            }}
+            onMouseLeave={e => {
+              if (persons.length > 0) {
+                e.currentTarget.style.backgroundColor = 'rgba(255, 71, 87, 0.14)';
+                e.currentTarget.style.borderColor = 'rgba(255, 71, 87, 0.55)';
+              }
+            }}
+          >
+            <Trash2 size={13} />
+            DELETE ALL {persons.length > 0 ? `(${persons.length})` : ''}
           </button>
 
           <button
@@ -868,201 +1071,355 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                 </div>
               </div>
 
-              {/* Cards Grid */}
-              <div style={{
-                flex: 1,
-                overflowY: 'auto',
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-                gap: '16px',
-                paddingRight: '4px'
-              }}>
-                {filtered.map(p => {
-                  const isCritical = p.threat_level === 'CRITICAL';
-                  const isHigh = p.threat_level === 'HIGH';
-                  const threatColor = isCritical ? 'var(--accent-alert)' : isHigh ? '#f59e0b' : '#38bdf8';
-                  const photoSrc = getPhotoUrl(p.photo_url || p.photo_path);
-
-                  return (
-                    <div
-                      key={p.person_id}
+              {/* Empty State when no criminals in watchlist */}
+              {filtered.length === 0 && (
+                <div style={{
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '40px 20px',
+                  textAlign: 'center',
+                  backgroundColor: 'var(--bg-panel)',
+                  border: '1px dashed var(--border-hairline)'
+                }}>
+                  <div style={{
+                    width: '64px',
+                    height: '64px',
+                    borderRadius: '50%',
+                    backgroundColor: 'rgba(0, 217, 163, 0.08)',
+                    border: '1px solid rgba(0, 217, 163, 0.25)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: '16px'
+                  }}>
+                    <Shield size={32} color="var(--accent-signal)" />
+                  </div>
+                  <h3 className="mono-display" style={{ fontSize: '1.05rem', color: 'var(--text-primary)', marginBottom: '8px' }}>
+                    {persons.length === 0 ? 'WATCHLIST DATABASE IS EMPTY' : 'NO TARGETS MATCHING QUERY'}
+                  </h3>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', maxWidth: '440px', lineHeight: 1.5, marginBottom: '20px' }}>
+                    {persons.length === 0
+                      ? 'All hardcoded mock data has been purged. Enroll a new criminal target or sync reference images to index biometric vectors into SQLite & FAISS.'
+                      : `No enrolled suspects match '${query}'. Try searching by another name, ID, or threat category.`}
+                  </p>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <button
+                      onClick={() => setShowEnrollForm(true)}
                       style={{
-                        backgroundColor: 'var(--bg-panel)',
-                        border: '1px solid var(--border-hairline)',
                         display: 'flex',
-                        flexDirection: 'column',
-                        overflow: 'hidden',
-                        borderRadius: '2px',
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
-                        transition: 'border-color 0.15s ease, transform 0.15s ease',
-                        position: 'relative'
+                        alignItems: 'center',
+                        gap: '8px',
+                        backgroundColor: 'var(--accent-signal)',
+                        color: '#0A0E14',
+                        border: 'none',
+                        padding: '10px 18px',
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        fontWeight: 700,
+                        fontSize: '0.8rem',
+                        cursor: 'pointer'
                       }}
-                      onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(0, 217, 163, 0.4)')}
-                      onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-hairline)')}
                     >
-                      {/* Photo Header Container */}
-                      <div
-                        style={{
-                          width: '100%',
-                          height: '160px',
-                          backgroundColor: '#04070A',
-                          position: 'relative',
-                          overflow: 'hidden',
-                          cursor: 'pointer'
+                      <UserPlus size={16} /> ENROLL NEW SUSPECT
+                    </button>
+                    {persons.length === 0 && (
+                      <button
+                        onClick={async () => {
+                          setIsSyncing(true);
+                          addLog('[SYNC] Syncing WatchList folder with SQLite and FAISS...');
+                          await syncWatchlist();
+                          await loadPersons();
+                          setIsSyncing(false);
+                          showTemporaryNotice('Watchlist synchronized with filesystem and FAISS index');
                         }}
-                        onClick={() => setPreviewTarget(p)}
-                        title="Click to preview full dossier"
-                      >
-                        {/* Image with fallback */}
-                        <TargetImage photoUrl={photoSrc} name={p.name} />
-
-                        {/* Optical Reticle Lines */}
-                        <div style={{ position: 'absolute', top: '8px', left: '8px', width: '12px', height: '12px', borderTop: '2px solid rgba(0, 217, 163, 0.6)', borderLeft: '2px solid rgba(0, 217, 163, 0.6)', pointerEvents: 'none' }} />
-                        <div style={{ position: 'absolute', top: '8px', right: '8px', width: '12px', height: '12px', borderTop: '2px solid rgba(0, 217, 163, 0.6)', borderRight: '2px solid rgba(0, 217, 163, 0.6)', pointerEvents: 'none' }} />
-                        <div style={{ position: 'absolute', bottom: '8px', left: '8px', width: '12px', height: '12px', borderBottom: '2px solid rgba(0, 217, 163, 0.6)', borderLeft: '2px solid rgba(0, 217, 163, 0.6)', pointerEvents: 'none' }} />
-                        <div style={{ position: 'absolute', bottom: '8px', right: '8px', width: '12px', height: '12px', borderBottom: '2px solid rgba(0, 217, 163, 0.6)', borderRight: '2px solid rgba(0, 217, 163, 0.6)', pointerEvents: 'none' }} />
-
-                        {/* Threat Level Badge */}
-                        <div style={{
-                          position: 'absolute',
-                          top: '8px',
-                          right: '8px',
-                          backgroundColor: 'rgba(10, 14, 20, 0.92)',
-                          border: `1px solid ${threatColor}`,
-                          color: threatColor,
-                          padding: '2px 7px',
-                          fontSize: '0.65rem',
-                          fontFamily: "'IBM Plex Mono', monospace",
-                          fontWeight: 700,
-                          zIndex: 2
-                        }}>
-                          {p.threat_level || 'HIGH'}
-                        </div>
-
-                        {/* Hover Preview Indicator */}
-                        <div style={{
-                          position: 'absolute',
-                          bottom: 0,
-                          left: 0,
-                          right: 0,
-                          backgroundColor: 'rgba(10, 14, 20, 0.85)',
-                          borderTop: '1px solid var(--border-hairline)',
-                          padding: '4px 8px',
+                        disabled={isSyncing}
+                        style={{
                           display: 'flex',
                           alignItems: 'center',
-                          justifyContent: 'space-between',
-                          fontSize: '0.65rem',
+                          gap: '8px',
+                          backgroundColor: 'var(--bg-panel-raised)',
+                          color: 'var(--text-primary)',
+                          border: '1px solid var(--border-hairline)',
+                          padding: '10px 18px',
                           fontFamily: "'IBM Plex Mono', monospace",
-                          color: 'var(--accent-signal)'
-                        }}>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <Scan size={11} /> MUGSHOT DOSSIER
-                          </span>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: 'var(--text-secondary)' }}>
-                            <Eye size={11} /> PREVIEW
-                          </span>
-                        </div>
-                      </div>
+                          fontSize: '0.8rem',
+                          cursor: isSyncing ? 'wait' : 'pointer'
+                        }}
+                      >
+                        <RefreshCw size={15} className={isSyncing ? 'spinning' : ''} />
+                        SYNC DISK PROFILES
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
-                      {/* Metadata Content */}
-                      <div style={{ padding: '12px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                        <div>
-                          <div className="mono-display" style={{ fontSize: '0.92rem', color: 'var(--text-primary)', marginBottom: '2px' }}>
-                            {p.name}
-                          </div>
-                          <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace", marginBottom: '6px' }}>
-                            ID: {p.person_id}
-                          </div>
-                          <div style={{
-                            fontSize: '0.72rem',
-                            color: 'var(--text-primary)',
-                            marginBottom: '10px',
-                            lineHeight: 1.35,
-                            height: '34px',
+              {/* Cards Grid */}
+              {filtered.length > 0 && (
+                <div style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                  gap: '20px',
+                  paddingRight: '6px',
+                  paddingBottom: '32px'
+                }}>
+                  {filtered.map(p => {
+                    const isCritical = p.threat_level === 'CRITICAL';
+                    const isHigh = p.threat_level === 'HIGH';
+                    const threatColor = isCritical ? 'var(--accent-alert)' : isHigh ? '#f59e0b' : '#38bdf8';
+                    const photoSrc = getPhotoUrl(p.photo_url || p.photo_path);
+
+                    return (
+                      <div
+                        key={p.person_id}
+                        style={{
+                          backgroundColor: 'var(--bg-panel)',
+                          border: '1px solid var(--border-hairline)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          borderRadius: '3px',
+                          boxShadow: '0 6px 20px rgba(0,0,0,0.65)',
+                          transition: 'border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease',
+                          position: 'relative',
+                          overflow: 'hidden',
+                          minHeight: '390px'
+                        }}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.borderColor = 'rgba(0, 217, 163, 0.5)';
+                          e.currentTarget.style.boxShadow = '0 8px 28px rgba(0, 217, 163, 0.15)';
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.borderColor = 'var(--border-hairline)';
+                          e.currentTarget.style.boxShadow = '0 6px 20px rgba(0,0,0,0.65)';
+                        }}
+                      >
+                        {/* Photo Header Container with Interactive Image Preview */}
+                        <div
+                          style={{
+                            width: '100%',
+                            height: '180px',
+                            backgroundColor: '#04070A',
+                            position: 'relative',
                             overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical'
-                          }}>
-                            {p.offense || 'Active Criminal Warrant'}
-                          </div>
-                        </div>
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                            borderBottom: '1px solid var(--border-hairline)'
+                          }}
+                          onClick={() => {
+                            setPreviewZoom(1.0);
+                            setPreviewTarget(p);
+                          }}
+                          title="Click to preview full-size mugshot and dossier"
+                        >
+                          {/* Image with multi-tier fallback */}
+                          <TargetImage personId={p.person_id} photoUrl={photoSrc} name={p.name} />
 
-                        <div>
-                          {/* FAISS Index Tag */}
+                          {/* Optical Reticle Lines */}
+                          <div style={{ position: 'absolute', top: '8px', left: '8px', width: '12px', height: '12px', borderTop: '2px solid rgba(0, 217, 163, 0.7)', borderLeft: '2px solid rgba(0, 217, 163, 0.7)', pointerEvents: 'none' }} />
+                          <div style={{ position: 'absolute', top: '8px', right: '8px', width: '12px', height: '12px', borderTop: '2px solid rgba(0, 217, 163, 0.7)', borderRight: '2px solid rgba(0, 217, 163, 0.7)', pointerEvents: 'none' }} />
+                          <div style={{ position: 'absolute', bottom: '8px', left: '8px', width: '12px', height: '12px', borderBottom: '2px solid rgba(0, 217, 163, 0.7)', borderLeft: '2px solid rgba(0, 217, 163, 0.7)', pointerEvents: 'none' }} />
+                          <div style={{ position: 'absolute', bottom: '8px', right: '8px', width: '12px', height: '12px', borderBottom: '2px solid rgba(0, 217, 163, 0.7)', borderRight: '2px solid rgba(0, 217, 163, 0.7)', pointerEvents: 'none' }} />
+
+                          {/* Threat Level Badge */}
                           <div style={{
-                            fontSize: '0.64rem',
+                            position: 'absolute',
+                            top: '8px',
+                            right: '8px',
+                            backgroundColor: 'rgba(10, 14, 20, 0.92)',
+                            border: `1px solid ${threatColor}`,
+                            color: threatColor,
+                            padding: '3px 8px',
+                            fontSize: '0.65rem',
                             fontFamily: "'IBM Plex Mono', monospace",
-                            color: 'var(--accent-signal)',
-                            backgroundColor: 'rgba(0, 217, 163, 0.08)',
-                            padding: '4px 6px',
-                            border: '1px solid rgba(0, 217, 163, 0.2)',
-                            marginBottom: '10px',
+                            fontWeight: 700,
+                            zIndex: 2,
+                            borderRadius: '2px',
+                            letterSpacing: '0.05em'
+                          }}>
+                            {p.threat_level || 'HIGH'}
+                          </div>
+
+                          {/* Top-Left Person ID Pill */}
+                          <div style={{
+                            position: 'absolute',
+                            top: '8px',
+                            left: '8px',
+                            backgroundColor: 'rgba(10, 14, 20, 0.88)',
+                            border: '1px solid var(--border-hairline)',
+                            color: 'var(--text-secondary)',
+                            padding: '2px 6px',
+                            fontSize: '0.62rem',
+                            fontFamily: "'IBM Plex Mono', monospace",
+                            zIndex: 2,
+                            borderRadius: '2px'
+                          }}>
+                            {p.person_id}
+                          </div>
+
+                          {/* Hover Preview Bar */}
+                          <div style={{
+                            position: 'absolute',
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            backgroundColor: 'rgba(10, 14, 20, 0.9)',
+                            borderTop: '1px solid rgba(0, 217, 163, 0.3)',
+                            padding: '5px 10px',
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'space-between'
+                            justifyContent: 'space-between',
+                            fontSize: '0.65rem',
+                            fontFamily: "'IBM Plex Mono', monospace",
+                            color: 'var(--accent-signal)'
                           }}>
-                            <span>FAISS HNSW INDEXED</span>
-                            <span>64-D</span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                              <ImageIcon size={12} /> VIEW MUGSHOT
+                            </span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: 'var(--text-secondary)' }}>
+                              <Eye size={12} /> DOSSIER
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Metadata Content Body */}
+                        <div style={{ padding: '14px 14px 14px 14px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '4px' }}>
+                              <div className="mono-display" style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)', wordBreak: 'break-word', lineHeight: 1.25 }}>
+                                {p.name}
+                              </div>
+                              {p.age && (
+                                <span style={{ fontSize: '0.66rem', fontFamily: "'IBM Plex Mono', monospace", color: 'var(--text-secondary)', backgroundColor: 'var(--bg-void)', padding: '1px 5px', border: '1px solid var(--border-hairline)', borderRadius: '2px', whiteSpace: 'nowrap' }}>
+                                  AGE {p.age}
+                                </span>
+                              )}
+                            </div>
+
+                            <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace", marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ color: threatColor }}>●</span>
+                              <span>{p.category || 'WANTED FUGITIVE'}</span>
+                            </div>
+
+                            <div style={{
+                              fontSize: '0.74rem',
+                              color: '#B0BAC5',
+                              marginBottom: '12px',
+                              lineHeight: 1.4,
+                              minHeight: '38px',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical'
+                            }}>
+                              {p.offense || 'Active Criminal Warrant'}
+                            </div>
                           </div>
 
-                          {/* Action Buttons */}
-                          <div style={{ display: 'flex', gap: '6px' }}>
-                            <button
-                              onClick={() => setPreviewTarget(p)}
-                              style={{
-                                flex: 1,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '4px',
-                                backgroundColor: 'var(--bg-panel-raised)',
-                                border: '1px solid var(--border-hairline)',
-                                color: 'var(--text-primary)',
-                                padding: '5px 8px',
-                                fontSize: '0.7rem',
-                                fontFamily: "'IBM Plex Mono', monospace",
-                                cursor: 'pointer'
-                              }}
-                              onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent-signal)')}
-                              onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-hairline)')}
-                            >
-                              <Eye size={12} /> DOSSIER
-                            </button>
+                          <div style={{ marginTop: 'auto' }}>
+                            {/* FAISS Index Tag */}
+                            <div style={{
+                              fontSize: '0.65rem',
+                              fontFamily: "'IBM Plex Mono', monospace",
+                              color: 'var(--accent-signal)',
+                              backgroundColor: 'rgba(0, 217, 163, 0.08)',
+                              padding: '5px 8px',
+                              border: '1px solid rgba(0, 217, 163, 0.25)',
+                              marginBottom: '10px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              borderRadius: '2px'
+                            }}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                <Fingerprint size={12} color="var(--accent-signal)" />
+                                FAISS HNSW INDEXED
+                              </span>
+                              <span style={{ fontWeight: 700 }}>64-D</span>
+                            </div>
 
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setDeleteConfirmTarget(p);
-                              }}
-                              aria-label={`Delete ${p.name}`}
-                              title="Purge target from Database and FAISS"
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '4px',
-                                backgroundColor: 'rgba(255, 71, 87, 0.1)',
-                                border: '1px solid rgba(255, 71, 87, 0.3)',
-                                color: 'var(--accent-alert)',
-                                padding: '5px 8px',
-                                fontSize: '0.7rem',
-                                fontFamily: "'IBM Plex Mono', monospace",
-                                cursor: 'pointer'
-                              }}
-                              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(255, 71, 87, 0.25)')}
-                              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(255, 71, 87, 0.1)')}
-                            >
-                              <Trash2 size={12} /> PURGE
-                            </button>
+                            {/* Action Buttons: PREVIEW & DELETE — ALWAYS 100% PROMINENT & VISIBLE */}
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button
+                                onClick={() => {
+                                  setPreviewZoom(1.0);
+                                  setPreviewTarget(p);
+                                }}
+                                style={{
+                                  flex: 1,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px',
+                                  backgroundColor: 'rgba(0, 217, 163, 0.12)',
+                                  border: '1px solid var(--accent-signal)',
+                                  color: 'var(--accent-signal)',
+                                  padding: '8px 10px',
+                                  fontSize: '0.75rem',
+                                  fontFamily: "'IBM Plex Mono', monospace",
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
+                                  borderRadius: '2px'
+                                }}
+                                onMouseEnter={e => {
+                                  e.currentTarget.style.backgroundColor = 'var(--accent-signal)';
+                                  e.currentTarget.style.color = '#0A0E14';
+                                }}
+                                onMouseLeave={e => {
+                                  e.currentTarget.style.backgroundColor = 'rgba(0, 217, 163, 0.12)';
+                                  e.currentTarget.style.color = 'var(--accent-signal)';
+                                }}
+                              >
+                                <Eye size={13} /> PREVIEW
+                              </button>
+
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteConfirmTarget(p);
+                                }}
+                                aria-label={`Delete ${p.name}`}
+                                title="Delete suspect from database and FAISS"
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '5px',
+                                  backgroundColor: 'rgba(255, 71, 87, 0.12)',
+                                  border: '1px solid rgba(255, 71, 87, 0.5)',
+                                  color: 'var(--accent-alert)',
+                                  padding: '8px 12px',
+                                  fontSize: '0.75rem',
+                                  fontFamily: "'IBM Plex Mono', monospace",
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
+                                  borderRadius: '2px'
+                                }}
+                                onMouseEnter={e => {
+                                  e.currentTarget.style.backgroundColor = 'var(--accent-alert)';
+                                  e.currentTarget.style.color = '#FFFFFF';
+                                }}
+                                onMouseLeave={e => {
+                                  e.currentTarget.style.backgroundColor = 'rgba(255, 71, 87, 0.12)';
+                                  e.currentTarget.style.color = 'var(--accent-alert)';
+                                }}
+                              >
+                                <Trash2 size={13} /> DELETE
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1154,49 +1511,118 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
               alignItems: 'center'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <ShieldAlert size={18} color="var(--accent-signal)" />
-                <span className="mono-display" style={{ fontSize: '0.95rem' }}>
-                  CRIMINAL DOSSIER // {previewTarget.person_id}
+                <ImageIcon size={18} color="var(--accent-signal)" />
+                <span className="mono-display" style={{ fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                  CRIMINAL IMAGE PREVIEW // {previewTarget.person_id}
                 </span>
               </div>
               <button
                 onClick={() => setPreviewTarget(null)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }}
+                aria-label="Close image preview"
               >
                 <X size={18} />
               </button>
             </div>
 
             {/* Lightbox Body */}
-            <div style={{ padding: '20px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-              {/* Large Mugshot Preview */}
+            <div style={{ padding: '20px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+              {/* Large Mugshot Image Preview with Zoom Controls */}
               <div style={{
-                width: '240px',
-                height: '260px',
+                width: '280px',
+                height: '310px',
                 backgroundColor: '#000',
                 border: '1px solid var(--border-hairline)',
                 position: 'relative',
                 overflow: 'hidden',
                 borderRadius: '2px',
-                boxShadow: '0 8px 24px rgba(0,0,0,0.8)'
+                boxShadow: '0 8px 24px rgba(0,0,0,0.8)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
               }}>
                 <TargetImage
+                  personId={previewTarget.person_id}
                   photoUrl={getPhotoUrl(previewTarget.photo_url || previewTarget.photo_path)}
                   name={previewTarget.name}
                   large
+                  zoom={previewZoom}
                 />
+
+                {/* Floating Zoom Controls for Image Preview */}
+                <div style={{
+                  position: 'absolute',
+                  top: '10px',
+                  left: '10px',
+                  display: 'flex',
+                  gap: '4px',
+                  zIndex: 10,
+                  backgroundColor: 'rgba(10, 14, 20, 0.85)',
+                  padding: '3px',
+                  border: '1px solid var(--border-hairline)',
+                  borderRadius: '2px'
+                }}>
+                  <button
+                    onClick={() => setPreviewZoom(z => Math.min(3.0, Number((z + 0.25).toFixed(2))))}
+                    title="Zoom In"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--accent-signal)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '3px'
+                    }}
+                  >
+                    <ZoomIn size={14} />
+                  </button>
+                  <button
+                    onClick={() => setPreviewZoom(z => Math.max(0.6, Number((z - 0.25).toFixed(2))))}
+                    title="Zoom Out"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--accent-signal)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '3px'
+                    }}
+                  >
+                    <ZoomOut size={14} />
+                  </button>
+                  <button
+                    onClick={() => setPreviewZoom(1.0)}
+                    title="Reset Zoom"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-secondary)',
+                      fontSize: '0.65rem',
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      cursor: 'pointer',
+                      padding: '0 4px',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}
+                  >
+                    {Math.round(previewZoom * 100)}%
+                  </button>
+                </div>
 
                 <div style={{
                   position: 'absolute',
-                  top: '8px',
-                  right: '8px',
+                  top: '10px',
+                  right: '10px',
                   backgroundColor: 'rgba(10, 14, 20, 0.92)',
                   border: `1px solid ${previewTarget.threat_level === 'CRITICAL' ? 'var(--accent-alert)' : '#f59e0b'}`,
                   color: previewTarget.threat_level === 'CRITICAL' ? 'var(--accent-alert)' : '#f59e0b',
                   padding: '2px 8px',
                   fontSize: '0.68rem',
                   fontFamily: "'IBM Plex Mono', monospace",
-                  fontWeight: 700
+                  fontWeight: 700,
+                  zIndex: 2
                 }}>
                   {previewTarget.threat_level || 'HIGH'}
                 </div>
@@ -1207,16 +1633,20 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                   left: 0,
                   right: 0,
                   backgroundColor: 'rgba(10, 14, 20, 0.88)',
-                  padding: '4px 8px',
-                  fontSize: '0.65rem',
+                  padding: '6px 10px',
+                  fontSize: '0.68rem',
                   fontFamily: "'IBM Plex Mono', monospace",
                   color: 'var(--accent-signal)',
                   borderTop: '1px solid var(--border-hairline)',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '4px'
+                  justifyContent: 'space-between',
+                  zIndex: 2
                 }}>
-                  <Fingerprint size={12} /> BIOMETRIC REFERENCE VERIFIED
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Fingerprint size={12} /> BIOMETRIC PREVIEW
+                  </span>
+                  <span style={{ color: 'var(--text-secondary)' }}>HIGH-RES</span>
                 </div>
               </div>
 
@@ -1265,8 +1695,8 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                   </div>
                 </div>
 
-                {/* Actions in Lightbox */}
-                <div style={{ display: 'flex', gap: '8px', marginTop: 'auto', paddingTop: '8px' }}>
+                {/* Actions in Lightbox: Pinpoint & Delete */}
+                <div style={{ display: 'flex', gap: '8px', marginTop: 'auto', paddingTop: '10px' }}>
                   {onSelectPerson && (
                     <button
                       onClick={() => {
@@ -1283,10 +1713,10 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                         backgroundColor: 'var(--accent-signal)',
                         color: '#0A0E14',
                         border: 'none',
-                        padding: '8px 12px',
-                        fontSize: '0.75rem',
+                        padding: '10px 14px',
+                        fontSize: '0.78rem',
                         fontFamily: "'IBM Plex Mono', monospace",
-                        fontWeight: 600,
+                        fontWeight: 700,
                         cursor: 'pointer'
                       }}
                     >
@@ -1305,14 +1735,14 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                       backgroundColor: 'rgba(255, 71, 87, 0.15)',
                       color: 'var(--accent-alert)',
                       border: '1px solid var(--accent-alert)',
-                      padding: '8px 14px',
-                      fontSize: '0.75rem',
+                      padding: '10px 16px',
+                      fontSize: '0.78rem',
                       fontFamily: "'IBM Plex Mono', monospace",
-                      fontWeight: 600,
+                      fontWeight: 700,
                       cursor: 'pointer'
                     }}
                   >
-                    <Trash2 size={14} /> PURGE TARGET
+                    <Trash2 size={14} /> DELETE TARGET
                   </button>
                 </div>
               </div>
@@ -1356,7 +1786,7 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <AlertTriangle size={24} color="var(--accent-alert)" />
               <h3 className="mono-display" style={{ fontSize: '1rem', margin: 0, color: 'var(--accent-alert)' }}>
-                CONFIRM TARGET PURGE
+                CONFIRM TARGET DELETION
               </h3>
             </div>
 
@@ -1411,7 +1841,141 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                   cursor: isDeleting ? 'wait' : 'pointer'
                 }}
               >
-                {isDeleting ? 'PURGING...' : 'PURGE TARGET'}
+                {isDeleting ? 'DELETING...' : 'DELETE SUSPECT'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Purge All Suspects & FAISS Vectors Safety Modal ──────────────── */}
+      {showDeleteAllModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(5, 7, 10, 0.92)',
+            zIndex: 450,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backdropFilter: 'blur(12px)'
+          }}
+          onClick={() => {
+            if (!isPurgingAll) setShowDeleteAllModal(false);
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: 'var(--bg-panel)',
+              border: '1px solid var(--accent-alert)',
+              width: '90vw',
+              maxWidth: '520px',
+              padding: '24px',
+              boxShadow: '0 24px 64px rgba(255, 71, 87, 0.35)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(255, 71, 87, 0.15)',
+                border: '1px solid var(--accent-alert)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <AlertOctagon size={24} color="var(--accent-alert)" />
+              </div>
+              <div>
+                <h3 className="mono-display" style={{ fontSize: '1.05rem', margin: 0, color: 'var(--accent-alert)' }}>
+                  PURGE ALL SUSPECT DOSSIERS & VECTORS
+                </h3>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                  IRREVERSIBLE DATABASE & FAISS VECTOR GRAPH RESET
+                </span>
+              </div>
+            </div>
+
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-primary)', lineHeight: 1.5 }}>
+              Are you sure you want to permanently delete <strong style={{ color: 'var(--accent-alert)' }}>ALL {persons.length} ENROLLED SUSPECTS</strong>? This will execute:
+            </div>
+
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              padding: '12px',
+              backgroundColor: 'rgba(255, 71, 87, 0.08)',
+              border: '1px solid rgba(255, 71, 87, 0.25)',
+              fontSize: '0.74rem',
+              fontFamily: "'IBM Plex Mono', monospace",
+              color: '#CBD5E1'
+            }}>
+              <div>• <strong>SQLite Database</strong>: Truncates <code>reference_persons</code> table</div>
+              <div>• <strong>Vector DB (FAISS)</strong>: Wipes all 64-D vector embeddings (0 active vectors)</div>
+              <div>• <strong>Image Storage & Vault</strong>: Clears all photos from disk & cache</div>
+              <div>• <strong>Frontend Gallery</strong>: Wipes gallery view and local memory cache</div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+              <button
+                onClick={() => setShowDeleteAllModal(false)}
+                disabled={isPurgingAll}
+                style={{
+                  flex: 1,
+                  backgroundColor: 'var(--bg-panel-raised)',
+                  border: '1px solid var(--border-hairline)',
+                  color: 'var(--text-secondary)',
+                  padding: '10px 16px',
+                  fontSize: '0.78rem',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontWeight: 600,
+                  cursor: isPurgingAll ? 'not-allowed' : 'pointer'
+                }}
+              >
+                CANCEL
+              </button>
+
+              <button
+                onClick={handlePurgeAll}
+                disabled={isPurgingAll}
+                style={{
+                  flex: 1.5,
+                  backgroundColor: 'var(--accent-alert)',
+                  border: 'none',
+                  color: '#FFFFFF',
+                  padding: '10px 16px',
+                  fontSize: '0.78rem',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontWeight: 700,
+                  cursor: isPurgingAll ? 'wait' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 14px rgba(255, 71, 87, 0.4)'
+                }}
+              >
+                {isPurgingAll ? (
+                  <>
+                    <RefreshCw size={14} className="spinning" />
+                    PURGING ALL TARGETS...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />
+                    CONFIRM PURGE ALL ({persons.length})
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -1422,23 +1986,98 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
 };
 
 /**
- * Tactical Mugshot Image Component with Automatic Fallback & Visual Reticle
+ * Tactical Mugshot Image Component with Multi-Tier Fallback & Reticle Support
+ * Guaranteed to NEVER display as a broken image: tries Base64 vault, primary URL,
+ * direct Vite public static path, and watchlist fallback candidates.
  */
-function TargetImage({ photoUrl, name, large }: { photoUrl?: string; name: string; large?: boolean }) {
-  const [loadError, setLoadError] = useState(false);
+function TargetImage({
+  personId,
+  photoUrl,
+  name,
+  large,
+  zoom = 1.0
+}: {
+  personId?: string;
+  photoUrl?: string;
+  name: string;
+  large?: boolean;
+  zoom?: number;
+}) {
+  const computeCandidates = (): string[] => {
+    const list: string[] = [];
+    const vaultImg = getVaultImage(personId);
+
+    // 1. Local permanent Base64 image in the vault
+    if (vaultImg && !list.includes(vaultImg)) {
+      list.push(vaultImg);
+    }
+
+    if (photoUrl) {
+      if (photoUrl.startsWith('data:')) {
+        if (!list.includes(photoUrl)) list.push(photoUrl);
+      } else {
+        const fullUrl = getPhotoUrl(photoUrl);
+        if (fullUrl && !list.includes(fullUrl)) list.push(fullUrl);
+
+        if (fullUrl.startsWith('http://localhost:8000/')) {
+          const rel = fullUrl.replace('http://localhost:8000', '');
+          if (!list.includes(rel)) list.push(rel);
+        }
+      }
+    }
+
+    // Direct static gallery paths based on personId / filename
+    if (personId) {
+      const pClean = personId.toLowerCase();
+      const nClean = name.replace(/\s+/g, '_').toLowerCase();
+      
+      const relGallery = `/static/gallery/${personId}_${nClean}.jpg`;
+      if (!list.includes(relGallery)) list.push(relGallery);
+
+      const relGalleryClean = `/static/gallery/${pClean}_${nClean}.jpg`;
+      if (!list.includes(relGalleryClean)) list.push(relGalleryClean);
+
+      const absGallery = `http://localhost:8000/static/gallery/${personId}_${nClean}.jpg`;
+      if (!list.includes(absGallery)) list.push(absGallery);
+    }
+
+    return list.filter(Boolean);
+  };
+
+  const [candidates, setCandidates] = useState<string[]>(computeCandidates);
+  const [candidateIndex, setCandidateIndex] = useState(0);
 
   useEffect(() => {
-    setLoadError(false);
-  }, [photoUrl]);
+    setCandidates(computeCandidates());
+    setCandidateIndex(0);
+  }, [photoUrl, personId, name]);
+
+  const currentSrc = candidates[candidateIndex];
+
+  const handleError = () => {
+    if (candidateIndex < candidates.length - 1) {
+      setCandidateIndex(prev => prev + 1);
+    } else {
+      setCandidateIndex(candidates.length); // All candidate URLs exhausted -> show monogram
+    }
+  };
+
+  const hasValidImage = Boolean(currentSrc && candidateIndex < candidates.length);
 
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      {!loadError && photoUrl ? (
+    <div style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      {hasValidImage ? (
         <img
-          src={photoUrl}
+          src={currentSrc}
           alt={name}
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          onError={() => setLoadError(true)}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            transform: `scale(${zoom})`,
+            transition: 'transform 0.2s ease-out'
+          }}
+          onError={handleError}
         />
       ) : (
         <div style={{
@@ -1448,27 +2087,27 @@ function TargetImage({ photoUrl, name, large }: { photoUrl?: string; name: strin
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: '#080C12',
+          backgroundColor: '#06090E',
           color: 'var(--text-secondary)',
-          padding: '10px'
+          padding: '12px'
         }}>
           <div style={{
-            width: large ? '64px' : '44px',
-            height: large ? '64px' : '44px',
+            width: large ? '64px' : '46px',
+            height: large ? '64px' : '46px',
             borderRadius: '50%',
-            backgroundColor: 'rgba(0, 217, 163, 0.1)',
-            border: '1px solid rgba(0, 217, 163, 0.3)',
+            backgroundColor: 'rgba(0, 217, 163, 0.12)',
+            border: '1px solid rgba(0, 217, 163, 0.35)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             marginBottom: '6px'
           }}>
-            <Fingerprint size={large ? 32 : 22} color="var(--accent-signal)" />
+            <Fingerprint size={large ? 32 : 24} color="var(--accent-signal)" />
           </div>
-          <span style={{ fontSize: '0.62rem', fontFamily: "'IBM Plex Mono', monospace", color: 'var(--text-secondary)' }}>
+          <span style={{ fontSize: '0.62rem', fontFamily: "'IBM Plex Mono', monospace", color: 'var(--accent-signal)', letterSpacing: '0.05em' }}>
             BIOMETRIC PROFILE
           </span>
-          <span style={{ fontSize: '0.68rem', fontWeight: 700, fontFamily: "'IBM Plex Mono', monospace", color: 'var(--text-primary)', marginTop: '2px', textAlign: 'center' }}>
+          <span style={{ fontSize: '0.72rem', fontWeight: 700, fontFamily: "'IBM Plex Mono', monospace", color: 'var(--text-primary)', marginTop: '2px', textAlign: 'center' }}>
             {name}
           </span>
         </div>
@@ -1476,3 +2115,4 @@ function TargetImage({ photoUrl, name, large }: { photoUrl?: string; name: strin
     </div>
   );
 }
+

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Radio, Video, Trash2, RefreshCw } from 'lucide-react';
+import { Search, Radio, Video, Trash2 } from 'lucide-react';
 import { CHECKPOINTS, type Match } from '../data/mockData';
 import { formatDistanceToNow } from 'date-fns';
 import { getConfidenceColor, getConfidenceLabel } from '../utils/confidence';

@@ -1,11 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Upload, Play, RefreshCw, MapPin, CheckCircle,
-  AlertTriangle, X, Radio
+  AlertTriangle, X, Radio, Scan, Zap
 } from 'lucide-react';
 import {
-  fetchCctvClips, processCctvClip, uploadCctvClip,
-  type CctvClip, type CctvProcessResult, type CctvMatch
+  fetchCctvClips,
+  uploadCctvClipStreaming,
+  processCctvClipStreaming,
+  type CctvClip,
+  type CctvProcessResult,
+  type CctvMatch,
+  type StreamCrop,
+  type StreamPhaseStart,
+  type StreamPhase1Complete,
+  type StreamMatch
 } from '../services/api';
 
 interface CctvStudioModalProps {
@@ -18,6 +26,10 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
   const [selectedClipId, setSelectedClipId] = useState<string>('clip-gct');
   const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [pipelinePhase, setPipelinePhase] = useState<'idle' | 'phase1_detecting' | 'phase2_matching' | 'complete'>('idle');
+  const [phaseMessage, setPhaseMessage] = useState<string>('');
+  const [streamCrops, setStreamCrops] = useState<StreamCrop[]>([]);
+  const [streamMatches, setStreamMatches] = useState<CctvMatch[]>([]);
   const [result, setResult] = useState<CctvProcessResult | null>(null);
   const [currentVideoTime, setCurrentVideoTime] = useState(0);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
@@ -33,6 +45,14 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Clean up abort controller on unmount
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   // Measure actual rendered video content box inside container (accounting for letterbox/pillarbox)
   const updateVideoBounds = () => {
@@ -92,7 +112,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
 
   const currentClip = clips.find(c => c.id === selectedClipId) || clips[0];
 
-  const handleRunPipeline = async (clipId?: string, filename?: string) => {
+  const handleRunPipeline = (clipId?: string, filename?: string) => {
     const targetId = clipId || selectedClipId;
     const targetClip = clips.find(c => c.id === targetId);
     const fname = filename || targetClip?.filename;
@@ -101,46 +121,137 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
       setActiveVideoUrl(getCctvStreamUrl(fname));
     }
 
+    abortControllerRef.current?.abort();
+
     setIsProcessing(true);
-    setUploadStatus(`Buffalo_s inference on ${fname || 'CCTV video'}...`);
+    setPipelinePhase('phase1_detecting');
+    setPhaseMessage(`Scanning ${fname || 'CCTV video'} with ByteTrack motion tracking...`);
+    setUploadStatus(`Fast inference & ByteTrack tracking on ${fname || 'CCTV video'}...`);
+    setStreamCrops([]);
+    setStreamMatches([]);
     setResult(null);
 
-    const res = await processCctvClip(targetId);
-    setResult(res);
-    setIsProcessing(false);
-    setUploadStatus(null);
+    const controller = processCctvClipStreaming(targetId, {
+      onPhaseStart: (data: StreamPhaseStart) => {
+        if (data.phase === 1) {
+          setPipelinePhase('phase1_detecting');
+          setPhaseMessage(data.message || 'Detecting faces with ByteTrack motion deduplication...');
+          setUploadStatus('Phase 1: Detecting faces & tracking unique appearances...');
+        } else if (data.phase === 2) {
+          setPipelinePhase('phase2_matching');
+          setPhaseMessage(data.message || 'Extracting 64-D embeddings & FAISS vector search...');
+          setUploadStatus('Phase 2: Extracting 64-D embeddings & querying WatchList FAISS index...');
+        }
+      },
+      onCrop: (crop: StreamCrop) => {
+        setStreamCrops(prev => [...prev, crop]);
+      },
+      onPhase1Complete: (data: StreamPhase1Complete) => {
+        setPipelinePhase('phase2_matching');
+        setPhaseMessage(`Phase 1 done (${data.total_unique_faces} unique tracks). Converting embeddings & FAISS search...`);
+        setUploadStatus(`Phase 2: Comparing ${data.total_unique_faces} unique tracks against WatchList FAISS...`);
+      },
+      onMatch: (data: StreamMatch) => {
+        setStreamMatches(prev => {
+          if (prev.some(m => m.event_id === data.match.event_id || (m.track_id === data.match.track_id && m.person_id === data.match.person_id))) {
+            return prev;
+          }
+          return [...prev, data.match];
+        });
+      },
+      onSummary: (res: CctvProcessResult) => {
+        setResult(res);
+        setIsProcessing(false);
+        setPipelinePhase('complete');
+        setUploadStatus(null);
 
-    if (videoRef.current) {
-      videoRef.current.currentTime = 0;
-      videoRef.current.play().catch(() => {});
-      setTimeout(updateVideoBounds, 200);
-    }
+        if (videoRef.current) {
+          videoRef.current.currentTime = 0;
+          videoRef.current.play().catch(() => {});
+          setTimeout(updateVideoBounds, 200);
+        }
+      },
+      onError: (err: string) => {
+        console.error("Pipeline streaming error:", err);
+        setIsProcessing(false);
+        setPipelinePhase('idle');
+        setUploadStatus(null);
+      }
+    });
+
+    abortControllerRef.current = controller;
   };
 
-  const processUploadedFile = async (file: File) => {
+  const processUploadedFile = (file: File) => {
     const localUrl = URL.createObjectURL(file);
     setActiveVideoUrl(localUrl);
 
+    abortControllerRef.current?.abort();
+
     setIsProcessing(true);
+    setPipelinePhase('phase1_detecting');
+    setPhaseMessage(`Ingesting ${file.name} with ByteTrack & FaceArc...`);
     setUploadStatus(`Ingesting with buffalo_s model & FAISS: ${file.name}...`);
+    setStreamCrops([]);
+    setStreamMatches([]);
+    setResult(null);
 
-    const res = await uploadCctvClip(file, currentClip?.checkpoint_id || 'cp-01');
-    setResult(res);
-    setIsProcessing(false);
-    setUploadStatus(null);
+    const controller = uploadCctvClipStreaming(file, currentClip?.checkpoint_id || 'cp-01', {
+      onPhaseStart: (data: StreamPhaseStart) => {
+        if (data.phase === 1) {
+          setPipelinePhase('phase1_detecting');
+          setPhaseMessage(data.message || 'Detecting faces & ByteTrack motion deduplication...');
+          setUploadStatus('Phase 1: Detecting faces & tracking unique appearances...');
+        } else if (data.phase === 2) {
+          setPipelinePhase('phase2_matching');
+          setPhaseMessage(data.message || 'Extracting 64-D embeddings & FAISS search...');
+          setUploadStatus('Phase 2: Converting unique face crops to 64-D embeddings & FAISS search...');
+        }
+      },
+      onCrop: (crop: StreamCrop) => {
+        setStreamCrops(prev => [...prev, crop]);
+      },
+      onPhase1Complete: (data: StreamPhase1Complete) => {
+        setPipelinePhase('phase2_matching');
+        setPhaseMessage(`Phase 1 done (${data.total_unique_faces} unique tracks). Converting embeddings & FAISS search...`);
+        setUploadStatus(`Phase 2: Comparing ${data.total_unique_faces} unique tracks against WatchList FAISS...`);
+      },
+      onMatch: (data: StreamMatch) => {
+        setStreamMatches(prev => {
+          if (prev.some(m => m.event_id === data.match.event_id || (m.track_id === data.match.track_id && m.person_id === data.match.person_id))) {
+            return prev;
+          }
+          return [...prev, data.match];
+        });
+      },
+      onSummary: async (res: CctvProcessResult) => {
+        setResult(res);
+        setIsProcessing(false);
+        setPipelinePhase('complete');
+        setUploadStatus(null);
 
-    // Refresh clips catalog
-    const updatedClips = await fetchCctvClips();
-    setClips(updatedClips);
-    if (updatedClips.length > 0) {
-      setSelectedClipId(updatedClips[updatedClips.length - 1].id);
-    }
+        // Refresh clips catalog
+        const updatedClips = await fetchCctvClips();
+        setClips(updatedClips);
+        if (updatedClips.length > 0) {
+          setSelectedClipId(updatedClips[updatedClips.length - 1].id);
+        }
 
-    if (videoRef.current) {
-      videoRef.current.currentTime = 0;
-      videoRef.current.play().catch(() => {});
-      setTimeout(updateVideoBounds, 200);
-    }
+        if (videoRef.current) {
+          videoRef.current.currentTime = 0;
+          videoRef.current.play().catch(() => {});
+          setTimeout(updateVideoBounds, 200);
+        }
+      },
+      onError: (err: string) => {
+        console.error("Upload stream error:", err);
+        setIsProcessing(false);
+        setPipelinePhase('idle');
+        setUploadStatus(null);
+      }
+    });
+
+    abortControllerRef.current = controller;
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -183,6 +294,34 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
     }
     return best.detections || [];
   }, [result, currentVideoTime]);
+
+  // Derived matches and crops lists for tabs (updates live while streaming)
+  const displayMatches = React.useMemo(() => {
+    if (result?.matches && result.matches.length > 0) {
+      return result.matches;
+    }
+    return streamMatches;
+  }, [result, streamMatches]);
+
+  const displayCrops = React.useMemo(() => {
+    if (result?.detected_crops && result.detected_crops.length > 0) {
+      return result.detected_crops;
+    }
+    return streamCrops.map(c => {
+      const matched = streamMatches.find(m => m.track_id === c.track_id);
+      return {
+        track_id: c.track_id,
+        crop_url: c.crop_url,
+        timestamp_sec: c.timestamp_sec,
+        bbox: c.bbox,
+        det_score: c.det_score,
+        best_match_name: matched ? matched.name : 'Passerby',
+        best_match_id: matched ? matched.person_id : null,
+        confidence: matched ? matched.confidence : 0,
+        status: matched ? matched.tier : 'UNKNOWN_PASSERBY'
+      };
+    });
+  }, [result, streamCrops, streamMatches]);
 
   return (
     <div
@@ -470,20 +609,17 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
               </div>
             )}
 
-            {/* Tactical Cyber Loading Screen HUD on Viewport */}
+            {/* Tactical Cyber Ingestion HUD on Screen Area (Live Face Previews & Phase Indicator) */}
             {isProcessing && (
               <div style={{
                 position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
+                inset: 0,
                 backgroundColor: 'rgba(7, 10, 14, 0.88)',
-                backdropFilter: 'blur(6px)',
+                backdropFilter: 'blur(8px)',
                 display: 'flex',
                 flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
+                justifyContent: 'space-between',
+                padding: '16px',
                 zIndex: 30,
                 fontFamily: "'IBM Plex Mono', monospace"
               }}>
@@ -496,53 +632,199 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                   height: '2px',
                   background: 'linear-gradient(90deg, transparent, #00D9A3, #38BDF8, transparent)',
                   boxShadow: '0 0 15px #00D9A3, 0 0 30px #38BDF8',
-                  animation: 'scanLaser 1.8s ease-in-out infinite'
+                  animation: 'scanLaser 1.8s ease-in-out infinite',
+                  pointerEvents: 'none'
                 }} />
 
-                {/* Rotating Tactical Reticle */}
-                <div style={{ position: 'relative', width: '80px', height: '80px', marginBottom: '16px' }}>
-                  <div style={{
-                    position: 'absolute',
-                    inset: 0,
-                    borderRadius: '50%',
-                    border: '2px dashed #00D9A3',
-                    animation: 'spin 3s linear infinite'
-                  }} />
-                  <div style={{
-                    position: 'absolute',
-                    inset: '10px',
-                    borderRadius: '50%',
-                    border: '1.5px solid #38BDF8',
-                    animation: 'spinReverse 2s linear infinite'
-                  }} />
-                  <div style={{
-                    position: 'absolute',
-                    inset: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#00D9A3'
-                  }}>
-                    <Radio size={24} style={{ animation: 'pulse 1s infinite' }} />
+                {/* Top Phase & Status Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{
+                      backgroundColor: pipelinePhase === 'phase1_detecting' ? 'rgba(0, 217, 163, 0.2)' : 'rgba(56, 189, 248, 0.2)',
+                      border: `1px solid ${pipelinePhase === 'phase1_detecting' ? 'var(--accent-signal)' : '#38BDF8'}`,
+                      color: pipelinePhase === 'phase1_detecting' ? 'var(--accent-signal)' : '#38BDF8',
+                      padding: '4px 8px',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      letterSpacing: '0.05em',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}>
+                      <Zap size={13} className="spinning" />
+                      {pipelinePhase === 'phase1_detecting'
+                        ? 'PHASE 1: FACE DETECTION & BYTETRACK'
+                        : 'PHASE 2: 64-D EMBEDDING & FAISS ANN'}
+                    </div>
+                    <span style={{ fontSize: '0.75rem', color: '#E2E8F0' }}>
+                      {phaseMessage}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '14px', fontSize: '0.72rem' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>
+                      UNIQUE CROPS: <strong style={{ color: 'var(--accent-signal)' }}>{streamCrops.length}</strong>
+                    </span>
+                    <span style={{ color: 'var(--text-secondary)' }}>
+                      WATCHLIST MATCHES: <strong style={{ color: '#F59E0B' }}>{streamMatches.length}</strong>
+                    </span>
                   </div>
                 </div>
 
-                {/* Loading Status Text & Telemetry */}
-                <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--accent-signal)', letterSpacing: '0.06em', marginBottom: '4px' }}>
-                  MOBILENET-V3 FAST INFERENCE & FAISS ANN SCANNING
-                </div>
-                <div style={{ fontSize: '0.74rem', color: '#38BDF8', marginBottom: '14px', maxWidth: '80%', textAlign: 'center' }}>
-                  {uploadStatus || 'EXTRACTING FRAMES // ULTRA-FAST 64-D // HNSW VECTOR SEARCH'}
+                {/* Center Live Face Crop Preview Grid right on the screen (the black area) */}
+                <div style={{
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  margin: '12px 0',
+                  overflow: 'hidden'
+                }}>
+                  {streamCrops.length === 0 ? (
+                    <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      <div style={{ position: 'relative', width: '60px', height: '60px', margin: '0 auto 12px' }}>
+                        <div style={{
+                          position: 'absolute',
+                          inset: 0,
+                          borderRadius: '50%',
+                          border: '2px dashed #00D9A3',
+                          animation: 'spin 3s linear infinite'
+                        }} />
+                        <div style={{
+                          position: 'absolute',
+                          inset: '8px',
+                          borderRadius: '50%',
+                          border: '1.5px solid #38BDF8',
+                          animation: 'spinReverse 2s linear infinite'
+                        }} />
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00D9A3' }}>
+                          <Scan size={20} />
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--accent-signal)' }}>
+                        SCANNING CCTV FRAMES WITH STRIDE-SKIPPING...
+                      </div>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                        ByteTrack associating high & low confidence detections
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--accent-signal)', letterSpacing: '0.05em' }}>
+                          LIVE DETECTED FACE PREVIEWS ({streamCrops.length} UNIQUE APPEARANCES / ANGLES)
+                        </span>
+                        <span style={{ fontSize: '0.65rem', color: '#38BDF8' }}>
+                          {pipelinePhase === 'phase2_matching' ? 'MATCHING WITH WATCHLIST VECTOR DB...' : 'READY FOR FAISS ANN SEARCH'}
+                        </span>
+                      </div>
+
+                      {/* Horizontal scrollable row of detected face crops popping in */}
+                      <div style={{
+                        display: 'flex',
+                        gap: '10px',
+                        overflowX: 'auto',
+                        padding: '8px 4px',
+                        maxWidth: '100%'
+                      }}>
+                        {streamCrops.map((crop, idx) => {
+                          const matched = streamMatches.find(m => m.track_id === crop.track_id);
+                          const isConfirmed = matched?.tier === 'CONFIRMED';
+                          const borderColor = matched ? (isConfirmed ? 'var(--accent-signal)' : '#F59E0B') : '#38BDF8';
+
+                          return (
+                            <div
+                              key={idx}
+                              style={{
+                                flexShrink: 0,
+                                width: '90px',
+                                backgroundColor: 'rgba(12, 16, 23, 0.95)',
+                                border: `1.5px solid ${borderColor}`,
+                                padding: '6px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                gap: '4px',
+                                boxShadow: `0 4px 14px ${matched ? (isConfirmed ? 'rgba(0, 217, 163, 0.25)' : 'rgba(245, 158, 11, 0.25)') : 'rgba(56, 189, 248, 0.15)'}`,
+                                animation: 'fadeInScale 0.25s ease-out'
+                              }}
+                            >
+                              <div style={{
+                                width: '74px',
+                                height: '74px',
+                                backgroundColor: '#000',
+                                overflow: 'hidden',
+                                position: 'relative'
+                              }}>
+                                <img
+                                  src={`http://localhost:8000${crop.crop_url}`}
+                                  alt={`Track ${crop.track_id}`}
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                  onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                                />
+                                <div style={{
+                                  position: 'absolute',
+                                  bottom: 0,
+                                  left: 0,
+                                  right: 0,
+                                  backgroundColor: 'rgba(0,0,0,0.75)',
+                                  fontSize: '8px',
+                                  color: '#FFF',
+                                  textAlign: 'center',
+                                  padding: '1px'
+                                }}>
+                                  {crop.timestamp_sec}s
+                                </div>
+                              </div>
+
+                              <div style={{ fontSize: '0.62rem', fontWeight: 600, color: 'var(--text-primary)', textAlign: 'center' }}>
+                                TRK #{crop.track_id}
+                              </div>
+
+                              {matched ? (
+                                <div style={{
+                                  fontSize: '0.58rem',
+                                  color: isConfirmed ? 'var(--accent-signal)' : '#F59E0B',
+                                  textAlign: 'center',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  maxWidth: '82px',
+                                  fontWeight: 700
+                                }}>
+                                  {(matched.confidence * 100).toFixed(0)}% {matched.name.split(' ')[0]}
+                                </div>
+                              ) : (
+                                <div style={{ fontSize: '0.58rem', color: '#94A3B8', textAlign: 'center' }}>
+                                  {crop.det_score ? `${(crop.det_score * 100).toFixed(0)}% DET` : 'DETECTED'}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* Animated Progress Bar */}
-                <div style={{ width: '280px', height: '4px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
+                {/* Bottom Progress Bar */}
+                <div style={{ width: '100%' }}>
                   <div style={{
-                    width: '100%',
-                    height: '100%',
-                    background: 'linear-gradient(90deg, #00D9A3, #38BDF8)',
-                    animation: 'progressIndeterminate 1.2s infinite'
-                  }} />
+                    height: '3px',
+                    backgroundColor: 'rgba(255,255,255,0.1)',
+                    borderRadius: '2px',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{
+                      width: '100%',
+                      height: '100%',
+                      background: pipelinePhase === 'phase1_detecting'
+                        ? 'linear-gradient(90deg, #00D9A3, #38BDF8)'
+                        : 'linear-gradient(90deg, #38BDF8, #F59E0B)',
+                      animation: 'progressIndeterminate 1.2s infinite'
+                    }} />
+                  </div>
                 </div>
               </div>
             )}
@@ -689,7 +971,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                     fontWeight: 600
                   }}
                 >
-                  WATCHLIST MATCHES ({result?.matches?.length || 0})
+                  WATCHLIST MATCHES ({displayMatches.length})
                 </button>
                 <button
                   onClick={() => setActiveTab('crops')}
@@ -705,7 +987,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                     fontWeight: 600
                   }}
                 >
-                  ALL DETECTED FACE CROPS ({result?.detected_crops?.length || 0})
+                  ALL DETECTED FACE CROPS ({displayCrops.length})
                 </button>
               </div>
 
@@ -718,7 +1000,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
 
             {activeTab === 'matches' ? (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))', gap: '12px' }}>
-                {result?.matches?.map((m, idx) => {
+                {displayMatches.map((m, idx) => {
                   const isConfirmed = m.tier === 'CONFIRMED';
                   const tierColor = isConfirmed ? 'var(--accent-signal)' : 'var(--accent-alert)';
 
@@ -844,22 +1126,22 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                   );
                 })}
 
-                {result && result.matches.length === 0 && (
+                {displayMatches.length === 0 && !isProcessing && (
                   <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem', fontFamily: "'IBM Plex Mono', monospace", gridColumn: '1 / -1' }}>
                     No high-confidence watchlist targets identified in this CCTV clip.
                   </div>
                 )}
 
-                {!result && (
+                {displayMatches.length === 0 && isProcessing && (
                   <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem', fontFamily: "'IBM Plex Mono', monospace", gridColumn: '1 / -1' }}>
-                    Click &ldquo;INGEST &amp; SCAN CCTV CLIP&rdquo; to execute multi-face detection, ArcFace LSH hashing, and FAISS similarity matching.
+                    Scanning footage... matches will appear here progressively.
                   </div>
                 )}
               </div>
             ) : (
               /* All Detected Crops Grid */
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px' }}>
-                {result?.detected_crops?.map((c, idx) => (
+                {displayCrops.map((c, idx) => (
                   <div
                     key={idx}
                     style={{
@@ -920,6 +1202,16 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
           0% { opacity: 1; transform: scale(1); }
           50% { opacity: 0.4; transform: scale(0.92); }
           100% { opacity: 1; transform: scale(1); }
+        }
+        @keyframes fadeInScale {
+          from {
+            opacity: 0;
+            transform: scale(0.85);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
         }
       `}</style>
     </div>

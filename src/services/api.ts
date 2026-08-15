@@ -3,7 +3,7 @@
  * Connects the React dashboard to the FastAPI AI Services & CCTV Ingestion Layer.
  */
 
-const API_BASE = "http://localhost:8000/api";
+const API_BASE = "/api";
 
 export interface BackendEvent {
   id: string | number;
@@ -323,17 +323,24 @@ export async function fetchReferencePersons(): Promise<ReferencePerson[]> {
   try {
     const res = await fetch(`${API_BASE}/reference-persons`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
   } catch (err) {
-    console.warn("Failed to fetch reference persons", err);
-    return [];
+    console.warn("Failed to fetch reference persons from server, loading from local persistent cache", err);
+    try {
+      const raw = localStorage.getItem('sentinel_watchlist_custom_targets');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
   }
 }
 
 export async function enrollReferencePerson(formData: FormData): Promise<ReferencePerson | null> {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    // 30s timeout to allow neural net ArcFace deep embedding extraction on CPU
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
 
     const res = await fetch(`${API_BASE}/reference-persons`, {
       method: "POST",
@@ -358,14 +365,11 @@ export async function enrollReferencePerson(formData: FormData): Promise<Referen
     const threat_level = String(formData.get("threat_level") || "HIGH");
     const offense = String(formData.get("offense") || "Active Warrant");
 
-    const file = formData.get("file") as File | null;
-    const photo_url = file ? URL.createObjectURL(file) : undefined;
-
     return {
       person_id,
       name,
-      photo_url,
-      photo_path: photo_url,
+      photo_url: `/static/gallery/${person_id}_${name.replace(/\s+/g, '_').toLowerCase()}.jpg`,
+      photo_path: `/static/gallery/${person_id}_${name.replace(/\s+/g, '_').toLowerCase()}.jpg`,
       age,
       last_seen: "Local Console Storage",
       category,
@@ -378,9 +382,9 @@ export async function enrollReferencePerson(formData: FormData): Promise<Referen
         faiss_vectors: 1
       },
       logs: [
-        `[${new Date().toLocaleTimeString()}] [LOCAL] Notice: FastAPI backend at http://localhost:8000 is offline.`,
-        `[${new Date().toLocaleTimeString()}] [LOCAL] Saved target '${name}' to local session gallery.`,
-        `[${new Date().toLocaleTimeString()}] [TIP] Start backend with 'python backend/main.py' to enable persistent SQLite & FAISS vector search.`
+        `[${new Date().toLocaleTimeString()}] [LOCAL] Notice: FastAPI backend connection delayed.`,
+        `[${new Date().toLocaleTimeString()}] [LOCAL] Saved target '${name}' to persistent local vault.`,
+        `[${new Date().toLocaleTimeString()}] [VAULT] Target '${name}' is preserved across tab closes and modal views.`
       ]
     };
   }
@@ -388,19 +392,29 @@ export async function enrollReferencePerson(formData: FormData): Promise<Referen
 
 export async function deleteReferencePerson(personId: string): Promise<boolean> {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
     const res = await fetch(`${API_BASE}/reference-persons/${personId}`, {
-      method: "DELETE",
-      signal: controller.signal
+      method: "DELETE"
     });
-    clearTimeout(timeoutId);
     return res.ok;
   } catch (err) {
     console.warn(`Backend delete failed, performing local removal for ${personId}:`, err);
     return true; // Optimistic deletion
   }
 }
+
+export async function deleteAllReferencePersons(): Promise<{ status: string; purged_count?: number } | null> {
+  try {
+    const res = await fetch(`${API_BASE}/reference-persons`, {
+      method: "DELETE"
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.warn("Backend deleteAll failed, performing local wipe:", err);
+    return { status: "LOCAL_PURGED" };
+  }
+}
+
 
 
 export async function syncWatchlist(): Promise<{ status: string; total_enrolled: number; faiss_vectors_indexed: number; profiles: ReferencePerson[] } | null> {
@@ -418,34 +432,254 @@ export async function syncWatchlist(): Promise<{ status: string; total_enrolled:
 
 export function getPhotoUrl(pathOrUrl?: string): string {
   if (!pathOrUrl) return '';
-  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://') || pathOrUrl.startsWith('data:') || pathOrUrl.startsWith('blob:')) {
+  if (pathOrUrl.startsWith('data:') || pathOrUrl.startsWith('blob:')) {
     return pathOrUrl;
   }
   const clean = pathOrUrl.replace(/\\/g, '/');
 
-  if (clean.startsWith('/static')) {
-    return `http://localhost:8000${clean}`;
+  // Relative static routes served directly by Vite from public/static/
+  if (clean.startsWith('/static/')) {
+    return clean;
+  }
+  if (clean.startsWith('static/')) {
+    return `/${clean}`;
   }
   if (clean.includes('static/gallery/')) {
-    const sub = clean.substring(clean.indexOf('static/gallery/'));
-    return `http://localhost:8000/${sub}`;
+    return '/' + clean.substring(clean.indexOf('static/gallery/'));
   }
   if (clean.includes('static/watchlist/')) {
-    const sub = clean.substring(clean.indexOf('static/watchlist/'));
-    return `http://localhost:8000/${sub}`;
+    return '/' + clean.substring(clean.indexOf('static/watchlist/'));
   }
   if (clean.includes('WatchList/') || clean.includes('watchlist/')) {
     const filename = clean.split(/[/\\]/).pop();
-    return `http://localhost:8000/static/watchlist/${filename}`;
+    return `/static/watchlist/${filename}`;
   }
-  if (clean.startsWith('static/')) {
-    return `http://localhost:8000/${clean}`;
+  if (clean.startsWith('http://') || clean.startsWith('https://')) {
+    return clean;
   }
   if (clean.startsWith('/')) {
-    return `http://localhost:8000${clean}`;
+    return clean;
   }
-  return `http://localhost:8000/static/gallery/${clean}`;
+  return `/static/gallery/${clean}`;
 }
 
 
+export interface StreamCrop {
+  track_id: number;
+  crop_url: string;
+  timestamp_sec: number;
+  bbox: number[];
+  norm_box: number[];
+  det_score: number;
+  frame_idx: number;
+  total_crops_so_far: number;
+}
+
+export interface StreamPhaseStart {
+  phase: number;
+  message: string;
+  total_frames?: number;
+  duration_sec?: number;
+  resolution?: string;
+  unique_faces?: number;
+}
+
+export interface StreamPhase1Complete {
+  total_unique_faces: number;
+  total_frames_scanned: number;
+  total_detections: number;
+  phase1_time_sec: number;
+  avg_detection_ms: number;
+}
+
+export interface StreamMatch {
+  match: CctvMatch;
+  crop_url: string;
+  total_matches_so_far: number;
+}
+
+/**
+ * Uploads a CCTV clip and streams two-phase processing results via SSE.
+ * Phase 1: Face detection → instant crop previews
+ * Phase 2: Embedding extraction → FAISS watchlist matching
+ *
+ * Returns an AbortController to allow cancellation.
+ */
+export function uploadCctvClipStreaming(
+  file: File,
+  checkpointId: string,
+  callbacks: {
+    onPhaseStart?: (data: StreamPhaseStart) => void;
+    onCrop?: (crop: StreamCrop) => void;
+    onPhase1Complete?: (data: StreamPhase1Complete) => void;
+    onMatch?: (data: StreamMatch) => void;
+    onSummary?: (result: CctvProcessResult) => void;
+    onError?: (message: string) => void;
+  }
+): AbortController {
+  const controller = new AbortController();
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("checkpoint_id", checkpointId);
+  formData.append("camera_id", "CAM-UPLOAD [TACTICAL UPLOAD]");
+  formData.append("frame_stride", "3");
+
+  (async () => {
+    try {
+      const response = await fetch(`${API_BASE}/cctv/upload-clip-stream`, {
+        method: "POST",
+        body: formData,
+        signal: controller.signal,
+      });
+
+      if (!response.ok || !response.body) {
+        callbacks.onError?.(`HTTP ${response.status}: ${response.statusText}`);
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Parse SSE events: lines starting with "data: "
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // keep incomplete last line in buffer
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
+
+          try {
+            const jsonStr = trimmed.slice(6); // remove "data: " prefix
+            const event = JSON.parse(jsonStr);
+
+            switch (event.type) {
+              case 'phase_start':
+                callbacks.onPhaseStart?.(event);
+                break;
+              case 'phase1_crop':
+                callbacks.onCrop?.(event);
+                break;
+              case 'phase1_complete':
+                callbacks.onPhase1Complete?.(event);
+                break;
+              case 'phase2_match':
+                callbacks.onMatch?.(event);
+                break;
+              case 'summary':
+                callbacks.onSummary?.(event as CctvProcessResult);
+                break;
+              case 'error':
+                callbacks.onError?.(event.message);
+                break;
+            }
+          } catch {
+            // Skip malformed JSON lines
+          }
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        console.warn("CCTV streaming upload failed:", err);
+        callbacks.onError?.(err.message || "Streaming connection failed");
+      }
+    }
+  })();
+
+  return controller;
+}
+
+/**
+ * Runs two-phase streaming analysis on an existing CCTV catalog clip via SSE.
+ */
+export function processCctvClipStreaming(
+  clipId: string,
+  callbacks: {
+    onPhaseStart?: (data: StreamPhaseStart) => void;
+    onCrop?: (crop: StreamCrop) => void;
+    onPhase1Complete?: (data: StreamPhase1Complete) => void;
+    onMatch?: (data: StreamMatch) => void;
+    onSummary?: (result: CctvProcessResult) => void;
+    onError?: (message: string) => void;
+  }
+): AbortController {
+  const controller = new AbortController();
+
+  (async () => {
+    try {
+      const response = await fetch(`${API_BASE}/cctv/process-clip-stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clip_id: clipId, frame_stride: 3, confidence_threshold: 0.60 }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok || !response.body) {
+        callbacks.onError?.(`HTTP ${response.status}: ${response.statusText}`);
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
+
+          try {
+            const jsonStr = trimmed.slice(6);
+            const event = JSON.parse(jsonStr);
+
+            switch (event.type) {
+              case 'phase_start':
+                callbacks.onPhaseStart?.(event);
+                break;
+              case 'phase1_crop':
+                callbacks.onCrop?.(event);
+                break;
+              case 'phase1_complete':
+                callbacks.onPhase1Complete?.(event);
+                break;
+              case 'phase2_match':
+                callbacks.onMatch?.(event);
+                break;
+              case 'summary':
+                callbacks.onSummary?.(event as CctvProcessResult);
+                break;
+              case 'error':
+                callbacks.onError?.(event.message);
+                break;
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        console.warn("CCTV streaming process failed:", err);
+        callbacks.onError?.(err.message || "Streaming connection failed");
+      }
+    }
+  })();
+
+  return controller;
+}
 

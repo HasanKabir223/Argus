@@ -1,14 +1,14 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * Magnetic hover effect for CTAs (Emil Kowalski-style: the element leans
- * gently toward the cursor, then springs back on leave). Strength is
- * capped so it never travels far from its resting position.
- * No-ops entirely under prefers-reduced-motion.
+ * Apple Design Fluid Magnetic Hook
+ * Translates an interactive element smoothly toward pointer on hover using
+ * physics-based interpolation. Provides instant press response on pointer-down
+ * and smooth critically damped spring reset on release/leave.
  */
 export function useMagnetic<T extends HTMLElement = HTMLButtonElement>(
-  strength = 0.35,
-  maxOffset = 14
+  strength = 0.28,
+  maxOffset = 12
 ) {
   const ref = useRef<T | null>(null);
 
@@ -20,24 +20,66 @@ export function useMagnetic<T extends HTMLElement = HTMLButtonElement>(
       return;
     }
 
-    const handleMove = (e: MouseEvent) => {
+    let animationFrameId: number | null = null;
+    let targetX = 0;
+    let targetY = 0;
+    let currentX = 0;
+    let currentY = 0;
+    let isHovering = false;
+
+    const animate = () => {
+      // Spring lerp with response = ~0.35s (critically damped)
+      const ease = 0.18;
+      currentX += (targetX - currentX) * ease;
+      currentY += (targetY - currentY) * ease;
+
+      if (node) {
+        node.style.transform = `translate3d(${currentX.toFixed(2)}px, ${currentY.toFixed(2)}px, 0)`;
+      }
+
+      if (isHovering || Math.abs(targetX - currentX) > 0.05 || Math.abs(targetY - currentY) > 0.05) {
+        animationFrameId = requestAnimationFrame(animate);
+      } else {
+        if (node) {
+          node.style.transform = 'translate3d(0px, 0px, 0)';
+        }
+        animationFrameId = null;
+      }
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
       const rect = node.getBoundingClientRect();
       const relX = e.clientX - (rect.left + rect.width / 2);
       const relY = e.clientY - (rect.top + rect.height / 2);
-      const x = Math.max(-maxOffset, Math.min(maxOffset, relX * strength));
-      const y = Math.max(-maxOffset, Math.min(maxOffset, relY * strength));
-      node.style.transform = `translate(${x}px, ${y}px)`;
+      targetX = Math.max(-maxOffset, Math.min(maxOffset, relX * strength));
+      targetY = Math.max(-maxOffset, Math.min(maxOffset, relY * strength));
+
+      if (!isHovering) {
+        isHovering = true;
+        if (!animationFrameId) {
+          animationFrameId = requestAnimationFrame(animate);
+        }
+      }
     };
 
-    const handleLeave = () => {
-      node.style.transform = 'translate(0px, 0px)';
+    const handlePointerLeave = () => {
+      isHovering = false;
+      targetX = 0;
+      targetY = 0;
+      if (!animationFrameId) {
+        animationFrameId = requestAnimationFrame(animate);
+      }
     };
 
-    node.addEventListener('mousemove', handleMove);
-    node.addEventListener('mouseleave', handleLeave);
+    node.addEventListener('pointermove', handlePointerMove);
+    node.addEventListener('pointerleave', handlePointerLeave);
+
     return () => {
-      node.removeEventListener('mousemove', handleMove);
-      node.removeEventListener('mouseleave', handleLeave);
+      node.removeEventListener('pointermove', handlePointerMove);
+      node.removeEventListener('pointerleave', handlePointerLeave);
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
     };
   }, [strength, maxOffset]);
 
