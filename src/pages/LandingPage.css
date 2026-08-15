@@ -182,8 +182,8 @@
 .hero-text-block {
   position: relative;
   z-index: 2;
-  margin-left: 8vw;
-  max-width: 42vw;
+  margin-left: clamp(24px, 7vw, 96px);
+  max-width: clamp(340px, 44vw, 620px);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -193,23 +193,23 @@
 /* Eyebrow Label */
 .hero-eyebrow {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--accent-signal);
-  letter-spacing: 0.3em;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 /* Headline */
 .hero-display-headline {
-  font-family: var(--font-mono);
-  font-size: clamp(3rem, 5.5vw, 5rem);
+  font-family: var(--font-sans);
+  font-size: clamp(2.75rem, 5.2vw, 4.75rem);
   font-weight: 700;
-  line-height: 1.0;
-  letter-spacing: -0.03em;
+  line-height: 1.04;
+  letter-spacing: -0.035em;
   color: var(--text-primary);
-  font-optical-sizing: auto;
-  margin-bottom: 24px;
+  margin-bottom: 22px;
   display: flex;
   flex-direction: column;
 }
@@ -220,17 +220,18 @@
 
 .headline-line.signal-word {
   color: var(--accent-signal);
+  text-shadow: 0 0 32px rgba(56, 189, 248, 0.4);
 }
 
 /* Subheadline */
 .hero-subheadline {
   font-family: var(--font-sans);
-  font-size: 16px;
+  font-size: clamp(14px, 1.15vw, 17px);
   color: var(--text-secondary);
   line-height: 1.6;
-  letter-spacing: 0em;
-  max-width: 420px;
-  margin-bottom: 36px;
+  letter-spacing: -0.01em;
+  max-width: 480px;
+  margin-bottom: 34px;
 }
 
 /* CTA Row */
@@ -1020,12 +1021,141 @@
 /* ─── SCROLL CROSS-FADE (Apple Rule: Pure Opacity) ────────────────────────── */
 .scroll-crossfade {
   opacity: 0;
-  transition: opacity 400ms ease-out;
-  will-change: opacity;
+  transform: translateY(16px);
+  transition: opacity 600ms cubic-bezier(0.16, 1, 0.3, 1), transform 600ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
 }
 
 .scroll-crossfade.is-visible {
   opacity: 1;
+  transform: translateY(0);
+}
+
+/* ─── RICH CYBERNETIC ANIMATION SUITE ────────────────────────────────────── */
+
+/* 1. Shimmer Light Beam Effect on Cards */
+.tech-card, .how-it-works-card, .architecture-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.tech-card::before, .how-it-works-card::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle at 50% 50%, rgba(56, 189, 248, 0.08) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+
+.tech-card:hover::before, .how-it-works-card:hover::before {
+  opacity: 1;
+  animation: rotate-radial-beam 6s linear infinite;
+}
+
+@keyframes rotate-radial-beam {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* 2. Shimmer Border Trail on Featured CTA */
+.btn-primary-ops {
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 0 24px rgba(56, 189, 248, 0.35);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-primary-ops::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-25deg);
+  animation: cta-light-beam 3.5s infinite ease-in-out;
+}
+
+@keyframes cta-light-beam {
+  0%, 60% { left: -100%; }
+  100% { left: 200%; }
+}
+
+.btn-primary-ops:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 32px rgba(56, 189, 248, 0.65), 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+
+/* 3. Hero Label Shimmer */
+.hero-category-label {
+  background: linear-gradient(90deg, #38BDF8, #67E8F9, #F8FAFC, #38BDF8);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: hero-text-shimmer 6s ease-in-out infinite;
+}
+
+@keyframes hero-text-shimmer {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* 4. Pulsing Beacon HUD Ring */
+@keyframes hud-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.4);
+    opacity: 0.4;
+  }
+}
+
+/* 5. Animated 5-Point Landmark Pulse */
+.landmark-dot {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #38BDF8;
+  box-shadow: 0 0 8px #38BDF8;
+  animation: landmark-ping 2s infinite cubic-bezier(0, 0, 0.2, 1);
+}
+
+.landmark-dot.eye-left { top: 38%; left: 38%; animation-delay: 0.1s; }
+.landmark-dot.eye-right { top: 38%; right: 38%; animation-delay: 0.2s; }
+.landmark-dot.nose { top: 52%; left: 50%; transform: translateX(-50%); animation-delay: 0.3s; }
+.landmark-dot.mouth-left { top: 66%; left: 42%; animation-delay: 0.4s; }
+.landmark-dot.mouth-right { top: 66%; right: 42%; animation-delay: 0.5s; }
+
+@keyframes landmark-ping {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.6);
+    opacity: 0.4;
+  }
+}
+
+/* 6. Vector Bar Active Pulse Wave */
+.vector-bar.active-pulse {
+  animation: bar-glow-pulse 0.4s ease;
+}
+
+@keyframes bar-glow-pulse {
+  0% { filter: brightness(1); }
+  50% { filter: brightness(1.8); }
+  100% { filter: brightness(1); }
 }
 
 /* ─── ACCESSIBILITY / FOCUS / REDUCED MOTION ─────────────────────────────── */
@@ -1088,6 +1218,7 @@
   }
   .scroll-crossfade {
     opacity: 1 !important;
+    transform: none !important;
     transition: none !important;
   }
   .entrance-fade {

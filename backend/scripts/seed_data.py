@@ -6,7 +6,7 @@ reference images into the FAISS vector database on startup.
 
 import os
 import cv2
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from backend.services.event_service import EventService
 from backend.services.pipeline import CheckpointPipeline
 
