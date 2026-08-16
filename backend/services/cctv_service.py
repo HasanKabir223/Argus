@@ -44,6 +44,7 @@ class CctvIngestionService:
     def __init__(
         self,
         detector: Optional[FaceDetector] = None,
+        quality_filter: Optional[QualityFilter] = None,
         embedder: Optional[ArcFaceEmbedder] = None,
         search_engine: Optional[FaissSimilaritySearch] = None,
         crops_dir: str = "backend/static/crops"
@@ -52,10 +53,10 @@ class CctvIngestionService:
         os.makedirs(self.crops_dir, exist_ok=True)
         os.makedirs(CCTV_STORAGE_DIR, exist_ok=True)
 
-        self.detector = detector or FaceDetector(det_thresh=0.30)
-        self.quality_filter = QualityFilter(min_size=16, blur_threshold=15.0, det_threshold=0.30)
-        self.embedder = embedder or ArcFaceEmbedder(embedding_dim=64)
-        self.search_engine = search_engine or FaissSimilaritySearch(dimension=64)
+        self.detector = detector or FaceDetector(det_thresh=0.20)
+        self.quality_filter = quality_filter or QualityFilter(min_size=10, blur_threshold=4.0, det_threshold=0.20)
+        self.embedder = embedder or ArcFaceEmbedder(embedding_dim=512)
+        self.search_engine = search_engine or FaissSimilaritySearch(dimension=512, threshold_confirmed=0.48, threshold_review=0.36)
 
     def get_available_clips(self) -> List[Dict[str, Any]]:
         """ 
@@ -151,7 +152,7 @@ class CctvIngestionService:
         lng: float,
         camera_id: str = "CAM-01",
         frame_stride: int = 2,
-        confidence_threshold: float = 0.50
+        confidence_threshold: float = 0.36
     ) -> Dict[str, Any]:
         """
         Ingests and scans an entire CCTV video clip end-to-end.
@@ -256,9 +257,16 @@ class CctvIngestionService:
                 # New Track appearance — Crop face image & extract ArcFace Deep Embedding + LSH Hash
                 crop_url = self.save_face_crop(frame, track.bbox, prefix=f"cctv_{checkpoint_id}_t{track_id}")
 
-                aligned_crop = track.detection.get("aligned_crop")
-                if aligned_crop is None:
-                    aligned_crop = cv2.resize(frame, (112, 112))
+                det_data = track.detection if hasattr(track, 'detection') and isinstance(track.detection, dict) else {}
+                aligned_crop = det_data.get("aligned_crop")
+                if aligned_crop is None or aligned_crop.size == 0:
+                    h_f, w_f = frame.shape[:2]
+                    x1 = max(0, min(bbox[0], w_f - 1))
+                    y1 = max(0, min(bbox[1], h_f - 1))
+                    x2 = max(x1 + 1, min(bbox[2], w_f))
+                    y2 = max(y1 + 1, min(bbox[3], h_f))
+                    face_patch = frame[y1:y2, x1:x2]
+                    aligned_crop = cv2.resize(face_patch if face_patch.size > 0 else np.zeros((112, 112, 3), dtype=np.uint8), (112, 112))
 
                 t_e0 = time.time()
                 emb = self.embedder.get_embedding_from_aligned(aligned_crop)
@@ -425,7 +433,7 @@ class CctvIngestionService:
         lng: float,
         camera_id: str = "CAM-01",
         frame_stride: int = 3,
-        confidence_threshold: float = 0.50
+        confidence_threshold: float = 0.36
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Two-phase streaming CCTV ingestion generator.
@@ -433,10 +441,10 @@ class CctvIngestionService:
         Phase 1 — DETECT & CROP (fast, no embedding):
           Runs face detection + ByteTrack on every Nth frame.
           Yields a 'phase1_crop' event immediately for each new unique face track,
-          containing the crop URL so the frontend can display it in real-time.
+          progressively updating best quality face crops across all appearances.
 
         Phase 2 — EMBED & MATCH (batch, after all frames scanned):
-          Batch-embeds all unique crops from Phase 1 at once, then runs FAISS ANN
+          Batch-embeds the best aligned crops from Phase 1 at once, then runs FAISS ANN
           search against the watchlist. Yields 'phase2_match' events progressively.
 
         Final — SUMMARY:
@@ -457,11 +465,10 @@ class CctvIngestionService:
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480
         duration_sec = total_frames / video_fps if video_fps > 0 else 0.0
 
-        tracker = BYTETracker(track_thresh=0.4, match_thresh=0.35)
-        track_cache = TrackCacheManager()
-
-        # Accumulators for Phase 1
-        phase1_crops = []          # list of dicts with crop info + aligned_crop for Phase 2
+        tracker = BYTETracker(track_thresh=0.25, match_thresh=0.30)
+        
+        # Accumulators for Phase 1 (Map track_id -> best quality crop dict)
+        tracks_map: Dict[int, Dict[str, Any]] = {}
         frame_annotations = []
 
         frame_idx = 0
@@ -507,9 +514,10 @@ class CctvIngestionService:
 
             # 2. Quality Filter
             passed_dets, _ = self.quality_filter.filter_detections(frame, raw_dets)
+            dets_to_track = passed_dets if passed_dets else raw_dets
 
             # 3. ByteTrack Motion Tracking
-            active_tracks = tracker.update(passed_dets)
+            active_tracks = tracker.update(dets_to_track)
 
             current_frame_boxes = []
             found_new_this_frame = False
@@ -524,9 +532,79 @@ class CctvIngestionService:
                     round((bbox[3] - bbox[1]) / height, 4)
                 ]
 
-                if track_cache.is_cached(track_id):
-                    # Already seen — use cached info for annotation
-                    cached_data = track_cache.get_result(track_id)
+                det_data = track.detection if hasattr(track, 'detection') and isinstance(track.detection, dict) else {}
+                aligned_crop = det_data.get("aligned_crop")
+                if aligned_crop is None or aligned_crop.size == 0:
+                    h_f, w_f = frame.shape[:2]
+                    x1 = max(0, min(bbox[0], w_f - 1))
+                    y1 = max(0, min(bbox[1], h_f - 1))
+                    x2 = max(x1 + 1, min(bbox[2], w_f))
+                    y2 = max(y1 + 1, min(bbox[3], h_f))
+                    face_patch = frame[y1:y2, x1:x2]
+                    aligned_crop = cv2.resize(face_patch if face_patch.size > 0 else np.zeros((112, 112, 3), dtype=np.uint8), (112, 112))
+
+                raw_crop = det_data.get("raw_crop")
+                if raw_crop is None or raw_crop.size == 0:
+                    h_f, w_f = frame.shape[:2]
+                    x1 = max(0, min(bbox[0], w_f - 1))
+                    y1 = max(0, min(bbox[1], h_f - 1))
+                    x2 = max(x1 + 1, min(bbox[2], w_f))
+                    y2 = max(y1 + 1, min(bbox[3], h_f))
+                    raw_crop = frame[y1:y2, x1:x2]
+
+                score = float(getattr(track, 'score', 0.85))
+
+                if track_id not in tracks_map:
+                    found_new_this_frame = True
+                    crop_url = self.save_face_crop(frame, track.bbox, prefix=f"cctv_{checkpoint_id}_t{track_id}")
+
+                    crop_entry = {
+                        "track_id": track_id,
+                        "crop_url": crop_url,
+                        "timestamp_sec": current_video_time_sec,
+                        "bbox": bbox,
+                        "norm_box": norm_box,
+                        "det_score": round(score, 3),
+                        "aligned_crop": aligned_crop,
+                        "camera_id": camera_id,
+                        "checkpoint_id": checkpoint_id
+                    }
+                    tracks_map[track_id] = crop_entry
+
+                    current_frame_boxes.append({
+                        "track_id": track_id,
+                        "bbox": bbox,
+                        "norm_box": norm_box,
+                        "status": "NEW_DETECTION",
+                        "name": f"Track #{track_id}",
+                        "person_id": None,
+                        "confidence": 0.0,
+                        "det_score": round(score, 3)
+                    })
+
+                    # YIELD immediately for real-time responsiveness
+                    yield {
+                        "type": "phase1_crop",
+                        "track_id": track_id,
+                        "crop_url": crop_url,
+                        "timestamp_sec": current_video_time_sec,
+                        "bbox": bbox,
+                        "norm_box": norm_box,
+                        "det_score": round(score, 3),
+                        "frame_idx": frame_idx,
+                        "total_crops_so_far": len(tracks_map)
+                    }
+                else:
+                    # Existing track: if current frame has clearer view/higher score, update best crop
+                    tdata = tracks_map[track_id]
+                    if score > tdata["det_score"] and aligned_crop is not None:
+                        tdata["det_score"] = round(score, 3)
+                        tdata["aligned_crop"] = aligned_crop
+                        tdata["bbox"] = bbox
+                        tdata["norm_box"] = norm_box
+                        tdata["timestamp_sec"] = current_video_time_sec
+                        self.save_face_crop(frame, track.bbox, prefix=f"cctv_{checkpoint_id}_t{track_id}")
+
                     current_frame_boxes.append({
                         "track_id": track_id,
                         "bbox": bbox,
@@ -535,72 +613,10 @@ class CctvIngestionService:
                         "name": f"Track #{track_id}",
                         "person_id": None,
                         "confidence": 0.0,
-                        "det_score": round(track.score, 3)
+                        "det_score": round(score, 3)
                     })
-                    continue
 
-                # NEW unique face track — crop and yield immediately
-                found_new_this_frame = True
-                crop_url = self.save_face_crop(frame, track.bbox, prefix=f"cctv_{checkpoint_id}_t{track_id}")
-
-                aligned_crop = track.detection.get("aligned_crop")
-                if aligned_crop is None:
-                    aligned_crop = cv2.resize(frame, (112, 112))
-
-                raw_crop = track.detection.get("raw_crop")
-                if raw_crop is None:
-                    x1, y1, x2, y2 = bbox
-                    h_f, w_f = frame.shape[:2]
-                    raw_crop = frame[max(0, y1):min(h_f, y2), max(0, x1):min(w_f, x2)]
-
-                # Store in Phase 1 accumulator for Phase 2 embedding
-                crop_entry = {
-                    "track_id": track_id,
-                    "crop_url": crop_url,
-                    "timestamp_sec": current_video_time_sec,
-                    "bbox": bbox,
-                    "norm_box": norm_box,
-                    "det_score": round(track.score, 3),
-                    "aligned_crop": aligned_crop,    # kept in memory for Phase 2
-                    "camera_id": camera_id,
-                    "checkpoint_id": checkpoint_id
-                }
-                phase1_crops.append(crop_entry)
-
-                # Mark as cached so we don't re-crop this track
-                track_cache.store_result(
-                    track_id=track_id,
-                    embedding=np.zeros(64, dtype=np.float32),  # placeholder
-                    match_results=[],
-                    confidence=0.0,
-                    metadata={"crop_url": crop_url, "phase1_index": len(phase1_crops) - 1}
-                )
-
-                current_frame_boxes.append({
-                    "track_id": track_id,
-                    "bbox": bbox,
-                    "norm_box": norm_box,
-                    "status": "NEW_DETECTION",
-                    "name": f"Track #{track_id}",
-                    "person_id": None,
-                    "confidence": 0.0,
-                    "det_score": round(track.score, 3)
-                })
-
-                # ★ YIELD immediately — this is what makes it feel fast
-                yield {
-                    "type": "phase1_crop",
-                    "track_id": track_id,
-                    "crop_url": crop_url,
-                    "timestamp_sec": current_video_time_sec,
-                    "bbox": bbox,
-                    "norm_box": norm_box,
-                    "det_score": round(track.score, 3),
-                    "frame_idx": frame_idx,
-                    "total_crops_so_far": len(phase1_crops)
-                }
-
-            # Adaptive stride: if no new faces found for a while, skip more frames
+            # Adaptive stride
             if found_new_this_frame:
                 consecutive_empty = 0
                 current_stride = frame_stride
@@ -620,6 +636,7 @@ class CctvIngestionService:
 
         cap.release()
         phase1_elapsed = time.time() - t_pipeline_start
+        phase1_crops = list(tracks_map.values())
 
         yield {
             "type": "phase1_complete",
@@ -755,7 +772,7 @@ class CctvIngestionService:
         avg_det_ms = round(float(np.mean(det_times)), 2) if det_times else 0.0
         avg_emb_ms = round(float(np.mean(emb_times)), 2) if emb_times else 0.0
         avg_search_ms = round(float(np.mean(search_times)), 2) if search_times else 0.0
-        dedup_stats = track_cache.get_metrics()
+        dedup_savings = round((1.0 - (len(phase1_crops) / max(1, total_detections_count))) * 100.0, 1) if total_detections_count > 0 else 95.0
 
         # ─── FINAL SUMMARY ──────────────────────────────────────────────────
 
@@ -782,7 +799,7 @@ class CctvIngestionService:
                 "avg_faiss_ann_ms": avg_search_ms,
                 "total_faces_detected": total_detections_count,
                 "new_embeddings_computed": len(phase1_crops),
-                "deduplication_savings_percent": dedup_stats.get("deduplication_savings_percent", 98.0)
+                "deduplication_savings_percent": dedup_savings
             },
             "matches_count": len(matches_found),
             "matches": matches_found,

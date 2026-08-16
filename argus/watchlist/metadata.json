@@ -1,0 +1,27 @@
+[
+  {
+    "person_id": "M-0001",
+    "name": "Mark Zuckerberg",
+    "photo_path": "H:\\palantir\\mini-palantir\\argus\\watchlist\\photos\\M-0001_Mark_Zuckerberg.jpg"
+  },
+  {
+    "person_id": "M-0002",
+    "name": "Vladimir Putin",
+    "photo_path": "H:\\palantir\\mini-palantir\\argus\\watchlist\\photos\\M-0002_Vladimir_Putin.jpg"
+  },
+  {
+    "person_id": "M-0003",
+    "name": "Barack Obama",
+    "photo_path": "H:\\palantir\\mini-palantir\\argus\\watchlist\\photos\\M-0003_Barack_Obama.jpg"
+  },
+  {
+    "person_id": "M-0004",
+    "name": "Donald Trump",
+    "photo_path": "H:\\palantir\\mini-palantir\\argus\\watchlist\\photos\\M-0004_Donald_Trump.jpg"
+  },
+  {
+    "person_id": "M-0005",
+    "name": "Elon Musk",
+    "photo_path": "H:\\palantir\\mini-palantir\\argus\\watchlist\\photos\\M-0005_Elon_Musk.jpg"
+  }
+]

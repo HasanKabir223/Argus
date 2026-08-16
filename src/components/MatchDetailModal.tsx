@@ -303,7 +303,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
             HAMMING DIST: <strong style={{ color: 'var(--accent-signal)' }}>2 BITS (POPCOUNT)</strong>
           </div>
           <div>
-            ANN ENGINE: <strong style={{ color: '#a855f7' }}>FAISS HNSW GRAPH</strong>
+            SIMILARITY ENGINE: <strong style={{ color: 'var(--accent-signal)' }}>ARCFACE 512-D COSINE</strong>
           </div>
         </div>
 

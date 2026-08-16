@@ -100,7 +100,7 @@ def seed_watchlist(pipeline: CheckpointPipeline):
             enrolled_count += 1
             enrolled_filenames.add(profile["filename"])
             enrolled_person_ids.add(profile["person_id"])
-            print(f"[SeedData] ✓ Enrolled: {profile['name']} ({profile['person_id']})")
+            print(f"[SeedData] [OK] Enrolled: {profile['name']} ({profile['person_id']})")
         except Exception as e:
             print(f"[SeedData] Error enrolling {profile['name']}: {e}")
 
@@ -123,27 +123,38 @@ def seed_watchlist(pipeline: CheckpointPipeline):
                 if img is None:
                     continue
 
-                clean_name = os.path.splitext(fname)[0].replace("_", " ").replace("-", " ").title()
-                p_id = f"p-wl-{enrolled_count + 1:03d}"
-                while p_id in enrolled_person_ids:
-                    enrolled_count += 1
-                    p_id = f"p-wl-{enrolled_count + 1:03d}"
+                base_no_ext = os.path.splitext(fname)[0]
+                if base_no_ext.startswith("p-") or base_no_ext.startswith("p_"):
+                    base_no_ext = base_no_ext[2:]
+
+                raw_parts = [p for p in base_no_ext.replace("-", "_").split("_") if p]
+                # If first word is repeated later (e.g. ['zuckerberg', 'mark', 'zuckerberg']), drop first word
+                if len(raw_parts) >= 2 and raw_parts[0].lower() == raw_parts[-1].lower():
+                    name_tokens = raw_parts[1:]
+                else:
+                    name_tokens = raw_parts
+
+                clean_name = " ".join(name_tokens).title()
+                slug = clean_name.lower().replace(" ", "-").replace(".", "")
+                p_id = f"p-{slug}"
+                if p_id in enrolled_person_ids:
+                    p_id = f"p-{slug}-{enrolled_count + 1}"
 
                 try:
                     pipeline.gallery_manager.enroll_person(
                         person_id=p_id,
                         name=clean_name,
                         photo_bgr=img,
-                        age=30,
+                        age=35,
                         last_seen="Surveillance Network",
-                        category="WANTED CRIMINAL",
+                        category="WANTED SUSPECT",
                         threat_level="HIGH",
-                        offense="Fugitive / Criminal Sighting Warrant"
+                        offense="Active Search Warrant"
                     )
                     enrolled_count += 1
                     enrolled_filenames.add(fname)
                     enrolled_person_ids.add(p_id)
-                    print(f"[SeedData] ✓ Auto-Enrolled: {clean_name} ({p_id})")
+                    print(f"[SeedData] [OK] Auto-Enrolled: {clean_name} ({p_id})")
                 except Exception as e:
                     print(f"[SeedData] Error enrolling extra image {fname}: {e}")
 

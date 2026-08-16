@@ -219,7 +219,7 @@ async def enroll_reference_person(
     }
     meta["logs"] = logs
 
-    print(f"[Routes] ✓ Enrolled {name} ({person_id}) in {total_ms:.2f}ms. Total FAISS vectors: {faiss_count}")
+    print(f"[Routes] [OK] Enrolled {name} ({person_id}) in {total_ms:.2f}ms. Total FAISS vectors: {faiss_count}")
     return meta
 
 
@@ -331,7 +331,7 @@ def process_cctv_clip(req: CctvProcessRequest):
         lng=chosen_clip["lng"],
         camera_id=chosen_clip["camera_id"],
         frame_stride=req.frame_stride or 2,
-        confidence_threshold=req.confidence_threshold or 0.60
+        confidence_threshold=req.confidence_threshold or 0.45
     )
 
     # Sync metrics
@@ -381,7 +381,7 @@ def process_cctv_clip_streaming_endpoint(req: CctvProcessRequest):
             lng=chosen_clip["lng"],
             camera_id=chosen_clip["camera_id"],
             frame_stride=req.frame_stride or 3,
-            confidence_threshold=req.confidence_threshold or 0.60
+            confidence_threshold=req.confidence_threshold or 0.45
         ):
             yield f"data: {json.dumps(event, default=str)}\n\n"
 
@@ -431,7 +431,7 @@ async def upload_and_process_cctv_clip(
         lng=cp_meta["lng"],
         camera_id=camera_id,
         frame_stride=frame_stride,
-        confidence_threshold=0.60
+        confidence_threshold=0.45
     )
     results["video_metadata"]["url"] = f"/static/cctv/{safe_filename}"
     return results
@@ -474,7 +474,7 @@ async def upload_and_process_cctv_clip_streaming(
             lng=cp_meta["lng"],
             camera_id=camera_id,
             frame_stride=frame_stride,
-            confidence_threshold=0.60
+            confidence_threshold=0.45
         ):
             # SSE format: data: {json}\n\n
             yield f"data: {json.dumps(event, default=str)}\n\n"

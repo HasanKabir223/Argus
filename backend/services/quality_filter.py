@@ -39,11 +39,11 @@ def is_too_blurry(face_crop: np.ndarray, threshold: float = 80.0) -> bool:
 class QualityFilter:
     def __init__(
         self,
-        min_size: int = 16,
-        blur_threshold: float = 15.0,
-        det_threshold: float = 0.30,
-        min_aspect_ratio: float = 0.45,
-        max_aspect_ratio: float = 2.2,
+        min_size: int = 10,
+        blur_threshold: float = 4.0,
+        det_threshold: float = 0.20,
+        min_aspect_ratio: float = 0.35,
+        max_aspect_ratio: float = 2.8,
     ):
         self.min_size = min_size
         self.blur_threshold = blur_threshold
@@ -74,23 +74,23 @@ class QualityFilter:
         w = x2 - x1
         h = y2 - y1
 
+        # Extract crop first so we have it even for borderline checks
+        face_crop = frame[y1:y2, x1:x2]
+        if face_crop.size == 0:
+            return False, "Empty crop", None, 0.0
+
         # 1. Minimum size check
         if w < self.min_size or h < self.min_size:
-            return False, f"Size too small ({w}x{h} < {self.min_size}x{self.min_size})", None, 0.0
+            return False, f"Size too small ({w}x{h} < {self.min_size}x{self.min_size})", face_crop, 0.0
 
         # 2. Aspect ratio check
         aspect_ratio = w / float(h) if h > 0 else 0.0
         if aspect_ratio < self.min_aspect_ratio or aspect_ratio > self.max_aspect_ratio:
-            return False, f"Aspect ratio invalid ({aspect_ratio:.2f} not in [{self.min_aspect_ratio}, {self.max_aspect_ratio}])", None, 0.0
+            return False, f"Aspect ratio invalid ({aspect_ratio:.2f} not in [{self.min_aspect_ratio}, {self.max_aspect_ratio}])", face_crop, 0.0
 
         # 3. Detection score check
         if score < self.det_threshold:
-            return False, f"Confidence too low ({score:.2f} < {self.det_threshold})", None, 0.0
-
-        # Extract crop
-        face_crop = frame[y1:y2, x1:x2]
-        if face_crop.size == 0:
-            return False, "Empty crop", None, 0.0
+            return False, f"Confidence too low ({score:.2f} < {self.det_threshold})", face_crop, 0.0
 
         # 4. Blur check
         blur_score = compute_blur_score(face_crop)

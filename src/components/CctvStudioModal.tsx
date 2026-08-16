@@ -23,7 +23,7 @@ interface CctvStudioModalProps {
 
 export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPinpointMatch }) => {
   const [clips, setClips] = useState<CctvClip[]>([]);
-  const [selectedClipId, setSelectedClipId] = useState<string>('clip-gct');
+  const [selectedClipId, setSelectedClipId] = useState<string>('');
   const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [pipelinePhase, setPipelinePhase] = useState<'idle' | 'phase1_detecting' | 'phase2_matching' | 'complete'>('idle');
@@ -94,7 +94,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
   }, []);
 
   const getCctvStreamUrl = (filename: string) => {
-    return `http://localhost:8000/static/cctv/${encodeURIComponent(filename)}`;
+    return `/static/cctv/${encodeURIComponent(filename)}`;
   };
 
   useEffect(() => {
@@ -362,7 +362,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
               CCTV SURVEILLANCE INGESTION & MATCHING STUDIO
             </h2>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>
-              HIGH-THROUGHPUT MULTI-FACE DETECTION // RETINAFACE // ULTRA-FAST 64-D // FAISS HNSW ANN
+              HIGH-PRECISION MULTI-FACE DETECTION // RETINAFACE // ARCFACE 512-D // COSINE SIMILARITY
             </div>
           </div>
         </div>
@@ -993,7 +993,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
 
               {result && (
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>
-                  FAISS HNSW ANN // 64-D EMBEDDING // {result.telemetry.total_faces_detected} FRAMES SCANNED
+                  ARCFACE 512-D // COSINE SIMILARITY // {result.telemetry.total_faces_detected} FRAMES SCANNED
                 </div>
               )}
             </div>
@@ -1041,7 +1041,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                         {/* Match Indicator & ANN Metrics */}
                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '2px' }}>
                           <div style={{
-                            backgroundColor: isConfirmed ? 'rgba(0, 217, 163, 0.15)' : 'rgba(255, 170, 0, 0.15)',
+                            backgroundColor: isConfirmed ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 170, 0, 0.15)',
                             border: `1px solid ${tierColor}`,
                             color: tierColor,
                             padding: '3px 8px',
@@ -1050,13 +1050,13 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                             fontSize: '1rem',
                             fontWeight: 700
                           }}>
-                            {(m.confidence * 100).toFixed(1)}% ANN
+                            {(m.confidence * 100).toFixed(1)}% SIMILARITY
                           </div>
                           <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }}>
                             {m.tier}
                           </span>
-                          <span style={{ fontSize: '0.62rem', color: '#a855f7', fontFamily: "'IBM Plex Mono', monospace" }}>
-                            HAMMING: {m.hamming_distance || 0} BITS
+                          <span style={{ fontSize: '0.62rem', color: '#38bdf8', fontFamily: "'IBM Plex Mono', monospace" }}>
+                            ARCFACE 512-D COSINE
                           </span>
                         </div>
 

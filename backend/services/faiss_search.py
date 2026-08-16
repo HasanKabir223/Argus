@@ -20,14 +20,14 @@ except ImportError:
 
 class FaissSimilaritySearch:
     """
-    Sub-millisecond Vector & Approximate Nearest Neighbor (ANN) Search Engine.
-    Supports FAISS HNSW graph indexing and Flat Inner Product on 512-D vectors.
+    Sub-millisecond Exact Cosine Similarity & Vector Search Engine.
+    Supports FAISS Inner Product / HNSW indexing on 512-D L2-normalized ArcFace vectors.
     """
     def __init__(
         self,
-        dimension: int = 64,
-        threshold_confirmed: float = 0.75,
-        threshold_review: float = 0.60,
+        dimension: int = 512,
+        threshold_confirmed: float = 0.48,
+        threshold_review: float = 0.36,
         index_type: str = "hnsw",
         hash_bits: int = 64,
         ef_search: int = 64,

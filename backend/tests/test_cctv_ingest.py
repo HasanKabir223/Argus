@@ -20,12 +20,25 @@ def test_cctv_ingest_pipeline():
     res = client.get("/ingest/status/nonexistent_job_123")
     assert res.status_code == 404, f"Expected 404, got {res.status_code}"
 
-    # 2. Test upload with real sample CCTV video
-    cctv_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "cctv footages", "videoplayback (1).mp4"))
-    assert os.path.exists(cctv_file), f"Sample video not found at {cctv_file}"
+    # 2. Test upload with real sample CCTV video from storage
+    from backend.services.cctv_service import _get_cctv_storage_dirs
+    storage_dirs = _get_cctv_storage_dirs()
+    cctv_file = None
+    for sdir in storage_dirs:
+        if os.path.exists(sdir):
+            for fname in os.listdir(sdir):
+                if fname.lower().endswith(('.mp4', '.avi', '.mov', '.webm')):
+                    candidate = os.path.join(sdir, fname)
+                    if os.path.getsize(candidate) > 1000:
+                        cctv_file = candidate
+                        break
+            if cctv_file:
+                break
+
+    assert cctv_file is not None and os.path.exists(cctv_file), "No sample CCTV video files found in storage directories."
 
     with open(cctv_file, "rb") as f:
-        upload_res = client.post("/ingest/upload", files={"video": ("test_clip.mp4", f, "video/mp4")})
+        upload_res = client.post("/ingest/upload", files={"video": (os.path.basename(cctv_file), f, "video/mp4")})
 
     assert upload_res.status_code == 200, f"Upload failed: {upload_res.text}"
     data = upload_res.json()

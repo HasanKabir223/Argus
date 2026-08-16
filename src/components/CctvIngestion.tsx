@@ -17,6 +17,12 @@ export interface TrackedPerson {
   first_frame: number;
   total_frames: number;
   embedding_stored: boolean;
+  match?: {
+    person_id: string;
+    name: string;
+    confidence: number;
+    tier: string;
+  } | null;
 }
 
 export type IngestStatus = 'idle' | 'uploaded' | 'processing' | 'done' | 'error';
@@ -175,9 +181,9 @@ export const CctvIngestion: React.FC<CctvIngestionProps> = ({
       }
     };
 
-    // Immediate first poll, then interval
+    // Immediate first poll, then fast 350ms interval for real-time responsiveness
     poll();
-    pollTimerRef.current = setInterval(poll, 1000);
+    pollTimerRef.current = setInterval(poll, 350);
   }, [apiBaseUrl]);
 
   // Start processing pipeline on button click
@@ -261,13 +267,13 @@ export const CctvIngestion: React.FC<CctvIngestionProps> = ({
     }
     switch (stage) {
       case 'detecting':
-        return 'Detecting faces...';
+        return 'Detecting faces (YuNet)...';
       case 'tracking':
-        return 'Tracking persons...';
+        return 'Tracking persons across frames...';
       case 'embedding':
-        return 'Generating embeddings...';
+        return 'Generating ArcFace embeddings...';
       case 'indexing':
-        return 'Storing to FAISS...';
+        return 'Indexing to FAISS & matching watchlist...';
       case 'done':
         return `Done. ${totalPersons || persons.length} unique persons indexed.`;
       default:
@@ -936,8 +942,13 @@ export const CctvIngestion: React.FC<CctvIngestionProps> = ({
                               display: 'block',
                             }}
                             onError={(e) => {
-                              // Fallback placeholder if image load fails
-                              (e.target as HTMLElement).style.display = 'none';
+                              const target = e.currentTarget;
+                              if (!target.dataset.retried) {
+                                target.dataset.retried = 'true';
+                                setTimeout(() => {
+                                  target.src = `${resolveCropUrl(person.best_crop_url)}?t=${Date.now()}`;
+                                }, 200);
+                              }
                             }}
                           />
                         ) : (
@@ -1000,9 +1011,32 @@ export const CctvIngestion: React.FC<CctvIngestionProps> = ({
                           </div>
                         </div>
 
-                        {/* Status Badge: Embedding stored (green) vs Skipped — low quality (grey) */}
-                        <div style={{ marginTop: '4px' }}>
-                          {person.embedding_stored ? (
+                        {/* Status Badge: Suspect Match (red/amber) vs Embedding stored (green) vs Skipped (grey) */}
+                        <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {person.match ? (
+                            <div
+                              style={{
+                                fontFamily: "'JetBrains Mono', 'IBM Plex Mono', monospace",
+                                fontSize: '0.72rem',
+                                fontWeight: 600,
+                                color: person.match.tier === 'CONFIRMED' ? 'var(--accent-alert)' : '#f59e0b',
+                                backgroundColor: person.match.tier === 'CONFIRMED' ? 'rgba(255, 71, 87, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                                border: `1px solid ${person.match.tier === 'CONFIRMED' ? 'var(--accent-alert)' : '#f59e0b'}`,
+                                borderRadius: '3px',
+                                padding: '3px 8px',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                              }}
+                            >
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                MATCH: {person.match.name}
+                              </span>
+                              <span style={{ marginLeft: '4px', flexShrink: 0 }}>
+                                {Math.round(person.match.confidence * 100)}%
+                              </span>
+                            </div>
+                          ) : person.embedding_stored ? (
                             <span
                               style={{
                                 display: 'inline-block',
@@ -1032,7 +1066,7 @@ export const CctvIngestion: React.FC<CctvIngestionProps> = ({
                                 padding: '2px 7px',
                               }}
                             >
-                              Skipped — low quality
+                              Processing face
                             </span>
                           )}
                         </div>

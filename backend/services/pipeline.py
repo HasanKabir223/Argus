@@ -38,32 +38,34 @@ class CheckpointPipeline:
         os.makedirs(self.crops_dir, exist_ok=True)
         os.makedirs(self.gallery_dir, exist_ok=True)
 
-        # 1. Initialize detector & filter
-        self.detector = FaceDetector(det_thresh=0.30)
-        self.quality_filter = QualityFilter(min_size=16, blur_threshold=15.0, det_threshold=0.30)
+        # 1. Initialize detector & filter with high discrimination
+        self.detector = FaceDetector(det_thresh=0.20)
+        self.quality_filter = QualityFilter(min_size=10, blur_threshold=4.0, det_threshold=0.20)
 
         # 2. Initialize tracking & deduplication
-        self.tracker = BYTETracker(track_thresh=0.4, match_thresh=0.35)
+        self.tracker = BYTETracker(track_thresh=0.30, match_thresh=0.30)
         self.track_cache = TrackCacheManager()
 
-        # 3. Initialize embedder & vector index
-        self.embedder = ArcFaceEmbedder(embedding_dim=64, hash_bits=64)
+        # 3. Initialize real 512-D ArcFace embedder & vector similarity index
+        self.embedder = ArcFaceEmbedder(embedding_dim=512, hash_bits=64)
         self.search_engine = FaissSimilaritySearch(
-            dimension=64,
-            threshold_confirmed=0.75,
-            threshold_review=0.60,
+            dimension=512,
+            threshold_confirmed=0.48,
+            threshold_review=0.36,
             index_type="hnsw",
             hash_bits=64
         )
         self.gallery_manager = GalleryManager(
             embedder=self.embedder,
             search_engine=self.search_engine,
-            gallery_dir=self.gallery_dir
+            gallery_dir=self.gallery_dir,
+            detector=self.detector
         )
 
         # 4. Initialize CCTV Ingestion Engine
         self.cctv_service = CctvIngestionService(
             detector=self.detector,
+            quality_filter=self.quality_filter,
             embedder=self.embedder,
             search_engine=self.search_engine,
             crops_dir=self.crops_dir

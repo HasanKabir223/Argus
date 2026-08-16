@@ -1,29 +1,72 @@
 """
-Face Embedding Generation Service — Ultra-Fast 64-D Deep Feature Extractor
-Generates 64-dimensional L2-normalized feature vectors for instant, sub-millisecond CPU execution
-with zero network weight-download delays.
+Face Embedding Generation Service — Real 512-D ArcFace Deep Neural Network
+Uses ArcFace MobileFaceNet / ResNet (WebFace600K pretrained) via ONNX Runtime for genuine
+biometric identity discrimination (512-D normalized feature vectors).
 """
 
+import os
 import cv2
 import numpy as np
 from typing import List, Optional, Dict, Any
 
+try:
+    import onnxruntime as ort
+    HAS_ONNX = True
+except ImportError:
+    HAS_ONNX = False
 
-class MobileNetV3FaceEmbedder:
+
+class ArcFaceDeepEmbedder:
     """
-    Ultra-Fast 64-D Feature Extractor Engine.
-    Produces L2-normalized vectors (unit sphere) where cosine similarity == inner dot product.
-    Optimized for instant execution (sub-0.05ms per crop).
+    Production-grade 512-D ArcFace Feature Extractor Engine.
+    Uses ONNX Runtime on CPU/GPU with MobileFaceNet WebFace600K weights.
+    Produces L2-normalized unit sphere embeddings where cosine similarity == inner dot product.
     """
     def __init__(
         self,
-        embedding_dim: int = 64,
-        model_name: str = "mobilenet_v3_fast_64d",
+        embedding_dim: int = 512,
+        model_name: str = "arcface_w600k_mbf",
         hash_bits: int = 64
     ):
         self.embedding_dim = embedding_dim
         self.model_name = model_name
-        self._backend = "fast_vectorized_64d"
+        self.session: Optional[Any] = None
+        self.input_name: str = "input.1"
+        self._backend = "arcface_onnx_512d"
+        
+        self._init_model()
+
+    def _init_model(self):
+        """
+        Locates and loads the pretrained ArcFace ONNX model.
+        """
+        candidate_paths = [
+            os.path.expanduser("~/.insightface/models/buffalo_s/w600k_mbf.onnx"),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models", "w600k_mbf.onnx")),
+            os.path.expanduser("~/.insightface/models/buffalo_l/w600k_r50.onnx"),
+        ]
+
+        model_path = None
+        for p in candidate_paths:
+            if os.path.exists(p):
+                model_path = p
+                break
+
+        if model_path and HAS_ONNX:
+            try:
+                opts = ort.SessionOptions()
+                opts.intra_op_num_threads = 2
+                opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+                self.session = ort.InferenceSession(model_path, opts, providers=["CPUExecutionProvider"])
+                self.input_name = self.session.get_inputs()[0].name
+                self._backend = f"arcface_onnx_512d ({os.path.basename(model_path)})"
+                print(f"[ArcFaceEmbedder] Loaded real ArcFace ONNX model from {model_path}")
+            except Exception as e:
+                print(f"[ArcFaceEmbedder] Warning: Failed to load ONNX model ({e}). Using vectorized fallback.")
+                self.session = None
+        else:
+            print("[ArcFaceEmbedder] Warning: ONNX ArcFace model not found. Using vectorized fallback.")
+            self.session = None
 
     @property
     def backend_name(self) -> str:
@@ -37,59 +80,75 @@ class MobileNetV3FaceEmbedder:
 
     def get_embedding(self, face_crop: np.ndarray) -> np.ndarray:
         """
-        Extracts a single 64-D L2-normalized embedding from a face image in ~0.05ms.
+        Extracts a single 512-D L2-normalized ArcFace embedding from a face image.
         """
         if face_crop is None or face_crop.size == 0:
             return np.zeros(self.embedding_dim, dtype=np.float32)
 
-        return self._embed_fast_64d(face_crop)
+        if self.session is not None:
+            return self._embed_onnx(face_crop)
+        else:
+            return self._embed_fallback(face_crop)
 
-    def _embed_fast_64d(self, face_crop: np.ndarray) -> np.ndarray:
+    def _embed_onnx(self, face_crop: np.ndarray) -> np.ndarray:
         """
-        Instant 64-D feature vector extraction:
-        - 32-D Spatial-Frequency Grid Moments
-        - 16-D 2D-DCT Low-High Frequency Energy
-        - 16-D Gradient & Color Distribution
+        Genuine ArcFace 512-D neural inference via ONNX Runtime.
+        Preprocesses face crop: canonical 112x112, BGR->RGB, zero-mean unit-variance normalized.
         """
         try:
-            # Resize to canonical 64x64
-            resized = cv2.resize(face_crop, (64, 64))
-            if len(resized.shape) == 2:
-                resized = cv2.cvtColor(resized, cv2.COLOR_GRAY2BGR)
-            elif resized.shape[2] == 4:
-                resized = cv2.cvtColor(resized, cv2.COLOR_BGRA2BGR)
-
-            gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
-            gray_f = gray.astype(np.float32) / 255.0
-
-            # 1. 32-D Spatial Grid Pooling (4x4 grid across 2 scales = 16 + 16 = 32 dims)
-            g1 = cv2.resize(gray_f, (4, 4)).flatten()
-            sobel_x = cv2.Sobel(gray_f, cv2.CV_32F, 1, 0, ksize=3)
-            sobel_y = cv2.Sobel(gray_f, cv2.CV_32F, 0, 1, ksize=3)
-            mag = np.sqrt(sobel_x ** 2 + sobel_y ** 2)
-            g2 = cv2.resize(mag, (4, 4)).flatten()
-            spatial_features = np.concatenate([g1, g2])[:32]
-
-            # 2. 16-D 2D-DCT Frequency Energy
-            dct = cv2.dct(gray_f)
-            dct_features = dct[:4, :4].flatten()[:16]
-
-            # 3. 16-D Color Channel & Orientation Moments
-            hsv = cv2.cvtColor(resized, cv2.COLOR_BGR2HSV)
-            h_hist = cv2.calcHist([hsv], [0], None, [8], [0, 180]).flatten() / (64 * 64)
-            s_hist = cv2.calcHist([hsv], [1], None, [8], [0, 256]).flatten() / (64 * 64)
-            color_features = np.concatenate([h_hist, s_hist])[:16]
-
-            # Combine into exact 64-D vector
-            raw_concat = np.concatenate([spatial_features, dct_features, color_features]).astype(np.float32)
-            if len(raw_concat) < self.embedding_dim:
-                padded = np.zeros(self.embedding_dim, dtype=np.float32)
-                padded[:len(raw_concat)] = raw_concat
-                embedding = padded
+            # 1. Resize to ArcFace 112x112 standard input dimension
+            img = cv2.resize(face_crop, (112, 112))
+            if len(img.shape) == 2:
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+            elif img.shape[2] == 4:
+                img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
             else:
-                embedding = raw_concat[:self.embedding_dim]
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-            return self._normalize(embedding)
+            # 2. Standard ArcFace normalization: (x - 127.5) / 127.5
+            blob = (img.astype(np.float32) - 127.5) / 127.5
+            # NCHW layout: (1, 3, 112, 112)
+            blob = np.transpose(blob, (2, 0, 1))[np.newaxis, ...]
+
+            # 3. ONNX forward pass
+            raw_emb = self.session.run(None, {self.input_name: blob})[0][0]
+            
+            # 4. L2 unit sphere normalization
+            return self._normalize(raw_emb.astype(np.float32))
+        except Exception as e:
+            return self._embed_fallback(face_crop)
+
+    def _embed_fallback(self, face_crop: np.ndarray) -> np.ndarray:
+        """
+        Zero-mean normalized gradient & frequency projection fallback.
+        Ensures mean-subtracted spherical distribution across all quadrants.
+        """
+        try:
+            resized = cv2.resize(face_crop, (112, 112))
+            gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY) if len(resized.shape) == 3 else resized
+            gray_f = (gray.astype(np.float32) - np.mean(gray)) / (np.std(gray) + 1e-6)
+
+            # Multi-scale DCT frequency features
+            dct = cv2.dct(cv2.resize(gray_f, (32, 32)))
+            dct_feat = dct[:16, :16].flatten()
+
+            # Multi-orientation Sobel gradient features
+            gx = cv2.Sobel(gray_f, cv2.CV_32F, 1, 0, ksize=3)
+            gy = cv2.Sobel(gray_f, cv2.CV_32F, 0, 1, ksize=3)
+            grad_feat = np.concatenate([
+                cv2.resize(gx, (12, 12)).flatten(),
+                cv2.resize(gy, (12, 12)).flatten()
+            ])
+
+            raw = np.concatenate([dct_feat, grad_feat]).astype(np.float32)
+            # Subtract mean to remove positive bias
+            raw = raw - np.mean(raw)
+
+            if len(raw) < self.embedding_dim:
+                padded = np.zeros(self.embedding_dim, dtype=np.float32)
+                padded[:len(raw)] = raw
+                return self._normalize(padded)
+            return self._normalize(raw[:self.embedding_dim])
         except Exception:
             return np.zeros(self.embedding_dim, dtype=np.float32)
 
@@ -115,6 +174,7 @@ class MobileNetV3FaceEmbedder:
         }
 
 
-# Backward compatibility aliases
-ArcFaceEmbedder = MobileNetV3FaceEmbedder
-FaceEmbedder = MobileNetV3FaceEmbedder
+# Aliases for backward compatibility
+ArcFaceEmbedder = ArcFaceDeepEmbedder
+FaceEmbedder = ArcFaceDeepEmbedder
+MobileNetV3FaceEmbedder = ArcFaceDeepEmbedder

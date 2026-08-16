@@ -23,11 +23,13 @@ class GalleryManager:
         self,
         embedder: ArcFaceEmbedder,
         search_engine: FaissSimilaritySearch,
-        gallery_dir: str = "backend/static/gallery"
+        gallery_dir: str = "backend/static/gallery",
+        detector: Optional[Any] = None
     ):
         self.embedder = embedder
         self.search_engine = search_engine
         self.gallery_dir = gallery_dir
+        self.detector = detector
         self.persons: List[Dict[str, Any]] = []
         os.makedirs(self.gallery_dir, exist_ok=True)
 
@@ -47,9 +49,9 @@ class GalleryManager:
         """
         Enrolls a wanted criminal / person of interest:
         1. Saves reference mugshot to static storage
-        2. Extracts 512-D ArcFace embedding using deep model
-        3. Persists criminal profile into SQLite reference_persons database table
-        4. Adds profile to FAISS vector index & LSH hash tables
+        2. Extracts 512-D ArcFace embedding using landmark-aligned face crop
+        3. Persists record in SQLite database
+        4. Adds feature vector to FAISS inner-product similarity index
         """
         import re
         t_start = time.time()
@@ -88,9 +90,19 @@ class GalleryManager:
             except Exception:
                 cv2.imwrite(photo_path, photo_bgr)
 
-        # Generate deep embedding from reference photo
+        # Generate deep embedding from landmark-aligned face crop of reference photo
         t_emb = time.time()
-        embedding = self.embedder.get_embedding(photo_bgr)
+        aligned_for_emb = photo_bgr
+        if self.detector is not None:
+            try:
+                dets = self.detector.detect(photo_bgr)
+                if dets:
+                    dets.sort(key=lambda d: (d["bbox"][2]-d["bbox"][0])*(d["bbox"][3]-d["bbox"][1]), reverse=True)
+                    if dets[0].get("aligned_crop") is not None:
+                        aligned_for_emb = dets[0]["aligned_crop"]
+            except Exception:
+                pass
+        embedding = self.embedder.get_embedding(aligned_for_emb)
         emb_ms = (time.time() - t_emb) * 1000.0
 
         # 1. Persist to SQLite Database
@@ -136,7 +148,7 @@ class GalleryManager:
         faiss_ms = (time.time() - t_faiss) * 1000.0
 
         total_ms = (time.time() - t_start) * 1000.0
-        print(f"[GalleryManager] ✓ Enrolled {name} ({person_id}): Emb={emb_ms:.2f}ms, DB={db_ms:.2f}ms, FAISS={faiss_ms:.2f}ms | Total={total_ms:.2f}ms")
+        print(f"[GalleryManager] [OK] Enrolled {name} ({person_id}): Emb={emb_ms:.2f}ms, DB={db_ms:.2f}ms, FAISS={faiss_ms:.2f}ms | Total={total_ms:.2f}ms")
 
         return meta
 
@@ -238,7 +250,7 @@ class GalleryManager:
         else:
             self.search_engine.set_reference_database(np.empty((0, getattr(self.search_engine, 'dimension', 512)), dtype=np.float32), [])
 
-        print(f"[GalleryManager] ✓ Purged all {count_before} suspects from SQLite, FAISS (0 vectors), and gallery disk storage.")
+        print(f"[GalleryManager] [OK] Purged all {count_before} suspects from SQLite, FAISS (0 vectors), and gallery disk storage.")
         return {
             "status": "success",
             "purged_count": count_before,

@@ -193,7 +193,7 @@ class EventService:
             cursor.execute("DELETE FROM match_events WHERE match_id = ? OR CAST(id AS TEXT) = ?", (event_id, event_id))
             conn.commit()
             conn.close()
-            print(f"[EventService] ✓ Deleted match event {event_id} from SQLite database.")
+            print(f"[EventService] [OK] Deleted match event {event_id} from SQLite database.")
             return True
         except Exception as e:
             print(f"[EventService] Error deleting event {event_id}: {e}")
@@ -201,20 +201,16 @@ class EventService:
 
     @staticmethod
     def clear_all_events() -> bool:
-
         """
-        Clears all active match sightings from SQLite and in-memory cache,
-        providing a clean slate for manual testing.
+        Clears all records from the match_events table.
         """
-        global _MEM_EVENTS
-        _MEM_EVENTS = []
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("DELETE FROM match_events")
             conn.commit()
             conn.close()
-            print("[EventService] ✓ Cleared all match events from SQLite database.")
+            print("[EventService] [OK] Cleared all match events from SQLite database.")
             return True
         except Exception as e:
             print(f"[EventService] Notice when clearing events: {e}")
@@ -391,7 +387,7 @@ class EventService:
             cursor.execute("DELETE FROM reference_persons")
             conn.commit()
             conn.close()
-            print("[EventService] ✓ Wiped all reference persons from SQLite database.")
+            print("[EventService] [OK] Wiped all reference persons from SQLite database.")
             return True
         except Exception as e:
             print(f"[EventService] Error deleting all reference persons: {e}")
