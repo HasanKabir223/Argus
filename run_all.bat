@@ -45,15 +45,25 @@ if "!PY_CMD!"=="" (
 
 echo [OK] Using Python: !PY_CMD!
 
-:: 2. Launch FastAPI AI Backend
-echo [1/3] Launching FastAPI AI Backend on http://localhost:8000 ...
-start "SENTINEL AI Backend Server (Port 8000)" cmd /k "cd /d %~dp0 && !PY_CMD! backend/main.py"
+:: 2. Kill any stale backend / frontend processes on ports 8000 and 5173
+echo [0/3] Clearing stale processes on ports 8000 and 5173...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8000.*LISTENING" 2^>nul') do (
+    taskkill /F /PID %%a >nul 2>&1
+)
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":5173.*LISTENING" 2^>nul') do (
+    taskkill /F /PID %%a >nul 2>&1
+)
+timeout /t 1 /nobreak >nul
 
-:: 3. Launch React Vite Frontend
+:: 3. Launch FastAPI AI Backend with 2 workers (prevents CPU starvation from CCTV ingestion threads)
+echo [1/3] Launching FastAPI AI Backend on http://localhost:8000 (2 workers)...
+start "SENTINEL AI Backend Server (Port 8000)" cmd /k "cd /d %~dp0 && !PY_CMD! -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 2"
+
+:: 4. Launch React Vite Frontend
 echo [2/3] Launching React Operations Console on http://localhost:5173 ...
 start "SENTINEL Frontend Console (Port 5173)" cmd /k "cd /d %~dp0 && npm run dev"
 
-:: 4. Wait for Backend to become healthy
+:: 5. Wait for Backend to become healthy
 echo Waiting for backend server initialization...
 set "HEALTHY=0"
 for /l %%i in (1,1,10) do (

@@ -205,7 +205,7 @@ class IngestJobService:
                         JOBS_STORE[job_id]["persons"] = persons_list
                         JOBS_STORE[job_id]["total_persons"] = len(persons_list)
 
-                time.sleep(0.001)
+                time.sleep(0.05)
 
             cap.release()
 

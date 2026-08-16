@@ -40,23 +40,23 @@ def search(
     metadata: List[Dict[str, Any]],
     query_embedding: np.ndarray,
     top_k: int = 3,
-    threshold_confirmed: float = 0.75,
-    threshold_review: float = 0.50
+    threshold_confirmed: float = 0.55,
+    threshold_review: float = 0.40
 ) -> List[Dict[str, Any]]:
     """
     Queries the FAISS index with a single 512-D face embedding and filters
     matches by confidence threshold tiers:
-    - CONFIRMED (>= 0.75): Automatically confirmed match.
-    - LOW_CONFIDENCE (0.50 to 0.75): Flagged for human operator review (up to top 3 candidates).
-    - Discarded (< 0.50): Ignored.
+    - CONFIRMED (>= 0.55): Automatically confirmed match.
+    - LOW_CONFIDENCE (0.40 to 0.55): Flagged for human operator review (up to top 3 candidates).
+    - Discarded (< 0.40): Ignored.
 
     Args:
         index (faiss.Index): Loaded FAISS vector index.
         metadata (list[dict]): Associated person metadata list.
         query_embedding (np.ndarray): 512-D L2-normalized query feature vector.
         top_k (int): Maximum number of top nearest neighbors to retrieve (default 3).
-        threshold_confirmed (float): Cosine similarity score for auto-CONFIRMED tier (default 0.75).
-        threshold_review (float): Cosine similarity score for human review tier (default 0.50).
+        threshold_confirmed (float): Cosine similarity score for auto-CONFIRMED tier (default 0.55).
+        threshold_review (float): Cosine similarity score for human review tier (default 0.40).
 
     Returns:
         list[dict]: Top-k matched target dicts sorted by confidence descending.

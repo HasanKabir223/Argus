@@ -40,12 +40,16 @@ def load_detector(model_path: str, input_size: tuple = (640, 480)) -> cv2.FaceDe
 def detect_and_filter(
     detector: cv2.FaceDetectorYN,
     frame: np.ndarray,
-    min_face_size: int = 40,
+    min_face_size: int = 80,
     blur_threshold: float = 80.0
 ) -> list[dict]:
     """
     Detects faces in a frame using YuNet and applies four quality filters:
     minimum size, confidence score, aspect ratio, and Laplacian blur threshold.
+
+    Before detection, the frame is cropped to the center 70% width and top 85%
+    height (ROI) to reduce edge-of-frame noise. All returned bbox coordinates
+    are mapped back to the original frame coordinate space.
 
     Args:
         detector (cv2.FaceDetectorYN): The loaded YuNet face detector.
@@ -54,17 +58,26 @@ def detect_and_filter(
         blur_threshold (float): Minimum Laplacian variance required to pass sharpness check.
 
     Returns:
-        list[dict]: List of filtered face detections, each containing bbox, landmarks,
-                    det_score, crop, and blur_score.
+        list[dict]: List of filtered face detections (max 10, sorted by det_score
+                    descending), each containing bbox, landmarks, det_score, crop,
+                    and blur_score.
     """
     try:
         if frame is None or frame.size == 0:
             return []
 
         h, w = frame.shape[:2]
-        detector.setInputSize((w, h))
 
-        _, faces = detector.detect(frame)
+        # --- ROI crop: center 70% width, top 85% height ---
+        roi_w = int(w * 0.70)
+        roi_h = int(h * 0.85)
+        x_offset = (w - roi_w) // 2
+        y_offset = 0  # top-aligned
+        roi = frame[y_offset:y_offset + roi_h, x_offset:x_offset + roi_w]
+
+        detector.setInputSize((roi_w, roi_h))
+
+        _, faces = detector.detect(roi)
         if faces is None:
             return []
 
@@ -78,7 +91,7 @@ def detect_and_filter(
                 continue
 
             # Quality filter 2: Confidence score
-            if score < 0.6:
+            if score < 0.75:
                 continue
 
             # Quality filter 3: Aspect ratio
@@ -86,11 +99,13 @@ def detect_and_filter(
             if aspect_ratio < 0.5 or aspect_ratio > 2.0:
                 continue
 
-            # Quality filter 4: Blur check via Laplacian variance
-            x1, y1 = int(x), int(y)
-            x2, y2 = int(x + fw), int(y + fh)
+            # Map ROI-local coordinates back to original frame space
+            x1, y1 = int(x) + x_offset, int(y) + y_offset
+            x2, y2 = int(x + fw) + x_offset, int(y + fh) + y_offset
             x1, y1 = max(0, x1), max(0, y1)
-            x2, y2 = min(frame.shape[1], x2), min(frame.shape[0], y2)
+            x2, y2 = min(w, x2), min(h, y2)
+
+            # Quality filter 4: Blur check via Laplacian variance
             crop = frame[y1:y2, x1:x2]
             if crop.size == 0:
                 continue
@@ -100,21 +115,26 @@ def detect_and_filter(
             if blur_score < blur_threshold:
                 continue
 
+            # Map landmarks back to original frame space
+            landmarks = np.array([
+                [face[4]  + x_offset, face[5]  + y_offset],
+                [face[6]  + x_offset, face[7]  + y_offset],
+                [face[8]  + x_offset, face[9]  + y_offset],
+                [face[10] + x_offset, face[11] + y_offset],
+                [face[12] + x_offset, face[13] + y_offset],
+            ], dtype=np.float32)
+
             results.append({
                 "bbox": [x1, y1, x2, y2],
-                "landmarks": np.array([
-                    [face[4],  face[5]],
-                    [face[6],  face[7]],
-                    [face[8],  face[9]],
-                    [face[10], face[11]],
-                    [face[12], face[13]],
-                ], dtype=np.float32),
+                "landmarks": landmarks,
                 "det_score": score,
                 "crop": crop,
                 "blur_score": blur_score
             })
 
-        return results
+        # Cap results: sort by det_score descending, keep top 10 only
+        results.sort(key=lambda r: r["det_score"], reverse=True)
+        return results[:10]
     except Exception as e:
         print(f"[detector] Error processing frame: {e}")
         return []
