@@ -129,6 +129,7 @@ def detect_and_filter(
                 "landmarks": landmarks,
                 "det_score": score,
                 "crop": crop,
+                "frame": frame,
                 "blur_score": blur_score
             })
 
