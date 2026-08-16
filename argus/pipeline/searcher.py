@@ -40,8 +40,8 @@ def search(
     metadata: List[Dict[str, Any]],
     query_embedding: np.ndarray,
     top_k: int = 3,
-    threshold_confirmed: float = 0.40,
-    threshold_review: float = 0.30
+    threshold_confirmed: float = 0.35,
+    threshold_review: float = 0.20
 ) -> List[Dict[str, Any]]:
     """
     Queries the FAISS index with a single 128-D face embedding and filters

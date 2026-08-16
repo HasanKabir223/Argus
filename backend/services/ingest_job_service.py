@@ -41,7 +41,7 @@ class IngestJobService:
         self.detector = detector or FaceDetector(det_thresh=0.20)
         self.quality_filter = quality_filter or QualityFilter(min_size=10, blur_threshold=4.0, det_threshold=0.20)
         self.embedder = embedder or ArcFaceEmbedder(embedding_dim=512)
-        self.search_engine = search_engine or FaissSimilaritySearch(dimension=512, threshold_confirmed=0.48, threshold_review=0.36)
+        self.search_engine = search_engine or FaissSimilaritySearch(dimension=512, threshold_confirmed=0.35, threshold_review=0.20)
 
     def create_job(self) -> str:
         job_id = uuid.uuid4().hex[:12]
@@ -241,7 +241,7 @@ class IngestJobService:
                     tdata["embedding_stored"] = True
 
                     # 3. Match against WatchList
-                    matches = self.search_engine.search(emb, top_k=3, threshold=0.36)
+                    matches = self.search_engine.search(emb, top_k=3, threshold=0.20)
                     if matches:
                         best = matches[0]
                         tdata["match"] = {
@@ -355,6 +355,6 @@ def get_ingest_service() -> IngestJobService:
                 detector=FaceDetector(det_thresh=0.20),
                 quality_filter=QualityFilter(min_size=10, blur_threshold=4.0, det_threshold=0.20),
                 embedder=ArcFaceEmbedder(embedding_dim=512),
-                search_engine=FaissSimilaritySearch(dimension=512, threshold_confirmed=0.55, threshold_review=0.40)
+                search_engine=FaissSimilaritySearch(dimension=512, threshold_confirmed=0.35, threshold_review=0.20)
             )
     return _ingest_service_instance

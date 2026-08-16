@@ -289,7 +289,7 @@ export async function processCctvClip(clipId: string): Promise<CctvProcessResult
     const res = await fetch(`${API_BASE}/cctv/process-clip`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clip_id: clipId, frame_stride: 2, confidence_threshold: 0.60 })
+      body: JSON.stringify({ clip_id: clipId, frame_stride: 2, confidence_threshold: 0.20 })
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
@@ -617,7 +617,7 @@ export function processCctvClipStreaming(
       const response = await fetch(`${API_BASE}/cctv/process-clip-stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clip_id: clipId, frame_stride: 3, confidence_threshold: 0.60 }),
+        body: JSON.stringify({ clip_id: clipId, frame_stride: 3, confidence_threshold: 0.20 }),
         signal: controller.signal,
       });
 

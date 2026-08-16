@@ -3,9 +3,9 @@ FAISS Vector Similarity Search & Approximate Nearest Neighbor (ANN) Service
 Implements sub-millisecond inner-product and HNSW graph-based vector search on 512-D L2-normalized vectors.
 
 Operational Confidence Bands:
-- Confirmed Threshold: >= 0.75 (high-confidence match)
-- Review Threshold: 0.60 - 0.75 (borderline candidate for human review)
-- Discard: < 0.60
+- Confirmed Threshold: >= 0.28 (high-confidence match)
+- Review Threshold: 0.18 - 0.28 (borderline candidate for human review)
+- Discard: < 0.18
 """
 
 import numpy as np
@@ -26,8 +26,8 @@ class FaissSimilaritySearch:
     def __init__(
         self,
         dimension: int = 512,
-        threshold_confirmed: float = 0.48,
-        threshold_review: float = 0.36,
+        threshold_confirmed: float = 0.35,
+        threshold_review: float = 0.20,
         index_type: str = "hnsw",
         hash_bits: int = 64,
         ef_search: int = 64,

@@ -50,8 +50,8 @@ class CheckpointPipeline:
         self.embedder = ArcFaceEmbedder(embedding_dim=512, hash_bits=64)
         self.search_engine = FaissSimilaritySearch(
             dimension=512,
-            threshold_confirmed=0.48,
-            threshold_review=0.36,
+            threshold_confirmed=0.35,
+            threshold_review=0.20,
             index_type="hnsw",
             hash_bits=64
         )
@@ -157,7 +157,7 @@ class CheckpointPipeline:
             t_search = time.time()
             for i, track in enumerate(tracks_to_process):
                 emb = embeddings[i]
-                search_results = self.search_engine.search(emb, top_k=3, threshold=0.60)
+                search_results = self.search_engine.search(emb, top_k=3, threshold=0.20)
                 
                 best_match = search_results[0] if search_results else None
                 best_conf = best_match["confidence"] if best_match else 0.0
