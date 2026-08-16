@@ -1,6 +1,6 @@
 """
 ARGUS Pipeline Assembly Module
-Integrates YuNet Face Detection, ArcFace Feature Embedding, and FAISS Vector Matching into a single interface.
+Integrates YuNet Face Detection, SFace Feature Embedding, and FAISS Vector Matching into a single interface.
 """
 
 import numpy as np
@@ -26,7 +26,7 @@ class ARGUSPipeline:
 
     def __init__(self, yunet_model_path: str, faiss_index_path: str, faiss_metadata_path: str):
         """
-        Initializes the pipeline by loading the YuNet detector, ArcFace embedder,
+        Initializes the pipeline by loading the YuNet detector, SFace embedder,
         and FAISS index with watchlist metadata.
 
         Args:
@@ -39,9 +39,9 @@ class ARGUSPipeline:
             self.detector = load_detector(yunet_model_path)
             print("[pipeline] Loaded YuNet detector")
 
-            print("[pipeline] Loading ArcFace embedder...")
+            print("[pipeline] Loading SFace embedder...")
             self.embedder = load_embedder()
-            print("[pipeline] Loaded ArcFace embedder")
+            print("[pipeline] Loaded SFace embedder")
 
             print(f"[pipeline] Loading FAISS index from {faiss_index_path}...")
             self.index, self.metadata = load_index(faiss_index_path, faiss_metadata_path)

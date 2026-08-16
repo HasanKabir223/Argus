@@ -111,6 +111,7 @@ def detect_and_filter(
                 ], dtype=np.float32),
                 "det_score": score,
                 "crop": crop,
+                "frame": frame,
                 "blur_score": blur_score
             })
 

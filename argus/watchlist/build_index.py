@@ -1,7 +1,7 @@
 """
 build_index.py
 
-Reads a folder of reference photos, generates ArcFace embeddings for each,
+Reads a folder of reference photos, generates SFace embeddings for each,
 and saves a FAISS index + metadata JSON file.
 
 Folder structure expected:
@@ -108,7 +108,7 @@ def build_index(photos_dir: str, output_dir: str):
         raise RuntimeError("No embeddings generated. Check your photos and model setup.")
 
     # Build FAISS index
-    dim = 512
+    dim = 128
     index = faiss.IndexFlatIP(dim)             # Inner product = cosine sim on normalized vectors
     matrix = np.stack(embeddings).astype(np.float32)
     index.add(matrix)
