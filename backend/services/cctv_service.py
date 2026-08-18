@@ -56,7 +56,7 @@ class CctvIngestionService:
         self.detector = detector or FaceDetector(det_thresh=0.20)
         self.quality_filter = quality_filter or QualityFilter(min_size=10, blur_threshold=4.0, det_threshold=0.20)
         self.embedder = embedder or ArcFaceEmbedder(embedding_dim=512)
-        self.search_engine = search_engine or FaissSimilaritySearch(dimension=512, threshold_confirmed=0.35, threshold_review=0.20)
+        self.search_engine = search_engine or FaissSimilaritySearch(dimension=512, threshold_confirmed=0.75, threshold_review=0.60)
 
     def get_available_clips(self) -> List[Dict[str, Any]]:
         """ 
@@ -152,7 +152,7 @@ class CctvIngestionService:
         lng: float,
         camera_id: str = "CAM-01",
         frame_stride: int = 2,
-        confidence_threshold: float = 0.20
+        confidence_threshold: float = 0.60
     ) -> Dict[str, Any]:
         """
         Ingests and scans an entire CCTV video clip end-to-end.
@@ -433,7 +433,7 @@ class CctvIngestionService:
         lng: float,
         camera_id: str = "CAM-01",
         frame_stride: int = 3,
-        confidence_threshold: float = 0.20
+        confidence_threshold: float = 0.60
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Two-phase streaming CCTV ingestion generator.

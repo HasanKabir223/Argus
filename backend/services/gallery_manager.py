@@ -32,6 +32,85 @@ class GalleryManager:
         self.detector = detector
         self.persons: List[Dict[str, Any]] = []
         os.makedirs(self.gallery_dir, exist_ok=True)
+        # Auto-reload all enrolled persons from SQLite into FAISS on startup
+        self._reload_from_db()
+
+    def _reload_from_db(self):
+        """
+        On startup: reads all reference persons from SQLite, re-embeds their photos,
+        and populates the in-memory FAISS index. This makes matches work immediately
+        after a server restart without needing to re-enroll anyone.
+        """
+        try:
+            db_persons = EventService.get_reference_persons()
+            if not db_persons:
+                return
+            loaded = 0
+            skipped = 0
+            for p in db_persons:
+                try:
+                    pid = p.get("person_id", "")
+                    name = p.get("name", "Unknown")
+                    photo_rel = p.get("photo_path", "")
+
+                    # Resolve to absolute path
+                    photo_abs = photo_rel.lstrip("/").replace("static/gallery", "backend/static/gallery")
+                    if not os.path.isabs(photo_abs):
+                        photo_abs = os.path.join(os.getcwd(), photo_abs)
+
+                    if not os.path.isfile(photo_abs):
+                        # Try alternative path patterns
+                        fname = os.path.basename(photo_rel)
+                        alt = os.path.join(self.gallery_dir, fname)
+                        if os.path.isfile(alt):
+                            photo_abs = alt
+                        else:
+                            skipped += 1
+                            continue
+
+                    img = cv2.imread(photo_abs)
+                    if img is None or img.size == 0:
+                        skipped += 1
+                        continue
+
+                    # Detect and align face in reference photo
+                    aligned = img
+                    if self.detector is not None:
+                        try:
+                            dets = self.detector.detect(img)
+                            if dets:
+                                dets.sort(key=lambda d: (d["bbox"][2]-d["bbox"][0])*(d["bbox"][3]-d["bbox"][1]), reverse=True)
+                                if dets[0].get("aligned_crop") is not None:
+                                    aligned = dets[0]["aligned_crop"]
+                        except Exception:
+                            pass
+
+                    emb = self.embedder.get_embedding(aligned)
+
+                    meta = {
+                        "person_id": pid,
+                        "name": name,
+                        "photo_url": photo_rel,
+                        "photo_path": photo_abs,
+                        "age": p.get("age", 28),
+                        "last_seen": p.get("last_seen", ""),
+                        "category": p.get("category", "WANTED"),
+                        "threat_level": p.get("threat_level", "HIGH"),
+                        "offense": p.get("offense", ""),
+                        "case_id": p.get("case_id", f"CR-{pid.upper()}"),
+                        "warrant_status": p.get("warrant_status", "ACTIVE WARRANT"),
+                        "created_at": p.get("created_at")
+                    }
+
+                    self.search_engine.add_reference(emb, meta)
+                    self.persons.append(meta)
+                    loaded += 1
+                except Exception as e:
+                    skipped += 1
+
+            print(f"[GalleryManager] Startup reload: {loaded} persons loaded into FAISS, {skipped} skipped")
+        except Exception as e:
+            print(f"[GalleryManager] Startup reload error (non-fatal): {e}")
 
     def enroll_person(
         self,

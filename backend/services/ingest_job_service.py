@@ -350,11 +350,22 @@ def get_ingest_service() -> IngestJobService:
                 search_engine=pipe.search_engine,
                 crops_dir=pipe.crops_dir
             )
-        except Exception:
+        except Exception as e:
+            print(f"[IngestJobService] Falling back to standalone instance: {e}")
+            det = FaceDetector(det_thresh=0.20)
+            emb = ArcFaceEmbedder(embedding_dim=512)
+            se  = FaissSimilaritySearch(dimension=512, threshold_confirmed=0.40, threshold_review=0.28)
+            # Reload gallery so this fallback instance can still match
+            try:
+                from backend.services.gallery_manager import GalleryManager
+                gm = GalleryManager(emb, se, detector=det)
+                # _reload_from_db is called in GalleryManager.__init__
+            except Exception:
+                pass
             _ingest_service_instance = IngestJobService(
-                detector=FaceDetector(det_thresh=0.20),
+                detector=det,
                 quality_filter=QualityFilter(min_size=10, blur_threshold=4.0, det_threshold=0.20),
-                embedder=ArcFaceEmbedder(embedding_dim=512),
-                search_engine=FaissSimilaritySearch(dimension=512, threshold_confirmed=0.35, threshold_review=0.20)
+                embedder=emb,
+                search_engine=se
             )
     return _ingest_service_instance

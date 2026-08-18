@@ -52,12 +52,27 @@ class CctvProcessRequest(BaseModel):
     filename: Optional[str] = None
     checkpoint_id: Optional[str] = "cp-01"
     frame_stride: Optional[int] = 2
-    confidence_threshold: Optional[float] = 0.20
+    confidence_threshold: Optional[float] = 0.60
 
 
 @router.get("/health")
 def health_check():
     return {"status": "ACTIVE", "service": "Mini-Gotham AI Checkpoint & CCTV Ingestion Services"}
+
+
+@router.get("/debug/faiss-status")
+def faiss_status():
+    """Debug endpoint: shows FAISS index size and threshold config."""
+    pipe = get_pipeline()
+    se = pipe.search_engine
+    return {
+        "faiss_index_size": se._index.ntotal if hasattr(se, '_index') else -1,
+        "dimension": se.dimension,
+        "threshold_confirmed": se.threshold_confirmed,
+        "threshold_review": se.threshold_review,
+        "embedder_backend": pipe.embedder._backend if hasattr(pipe.embedder, '_backend') else "unknown",
+        "gallery_persons_in_memory": len(pipe.gallery_manager.persons)
+    }
 
 
 @router.get("/checkpoints")
@@ -331,7 +346,7 @@ def process_cctv_clip(req: CctvProcessRequest):
         lng=chosen_clip["lng"],
         camera_id=chosen_clip["camera_id"],
         frame_stride=req.frame_stride or 2,
-        confidence_threshold=req.confidence_threshold or 0.20
+        confidence_threshold=req.confidence_threshold or 0.60
     )
 
     # Sync metrics
@@ -381,7 +396,7 @@ def process_cctv_clip_streaming_endpoint(req: CctvProcessRequest):
             lng=chosen_clip["lng"],
             camera_id=chosen_clip["camera_id"],
             frame_stride=req.frame_stride or 3,
-            confidence_threshold=req.confidence_threshold or 0.20
+            confidence_threshold=req.confidence_threshold or 0.60
         ):
             yield f"data: {json.dumps(event, default=str)}\n\n"
 
@@ -431,7 +446,7 @@ async def upload_and_process_cctv_clip(
         lng=cp_meta["lng"],
         camera_id=camera_id,
         frame_stride=frame_stride,
-        confidence_threshold=0.20
+        confidence_threshold=0.60
     )
     results["video_metadata"]["url"] = f"/static/cctv/{safe_filename}"
     return results
@@ -474,7 +489,7 @@ async def upload_and_process_cctv_clip_streaming(
             lng=cp_meta["lng"],
             camera_id=camera_id,
             frame_stride=frame_stride,
-            confidence_threshold=0.20
+            confidence_threshold=0.60
         ):
             # SSE format: data: {json}\n\n
             yield f"data: {json.dumps(event, default=str)}\n\n"

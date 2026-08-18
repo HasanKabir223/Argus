@@ -46,12 +46,12 @@ class CheckpointPipeline:
         self.tracker = BYTETracker(track_thresh=0.30, match_thresh=0.30)
         self.track_cache = TrackCacheManager()
 
-        # 3. Initialize real 512-D ArcFace embedder & vector similarity index
+        # 3. Initialize ArcFace 512-D embedder & vector similarity index
         self.embedder = ArcFaceEmbedder(embedding_dim=512, hash_bits=64)
         self.search_engine = FaissSimilaritySearch(
             dimension=512,
-            threshold_confirmed=0.35,
-            threshold_review=0.20,
+            threshold_confirmed=0.75,
+            threshold_review=0.60,
             index_type="hnsw",
             hash_bits=64
         )
@@ -157,7 +157,7 @@ class CheckpointPipeline:
             t_search = time.time()
             for i, track in enumerate(tracks_to_process):
                 emb = embeddings[i]
-                search_results = self.search_engine.search(emb, top_k=3, threshold=0.20)
+                search_results = self.search_engine.search(emb, top_k=3, threshold=0.60)
                 
                 best_match = search_results[0] if search_results else None
                 best_conf = best_match["confidence"] if best_match else 0.0

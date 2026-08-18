@@ -35,6 +35,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'matches' | 'crops'>('matches');
   const [isDragging, setIsDragging] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [videoDims, setVideoDims] = useState<{ width: number; height: number; offsetX: number; offsetY: number }>({
     width: 0,
     height: 0,
@@ -168,6 +169,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
         if (videoRef.current) {
           videoRef.current.currentTime = 0;
           videoRef.current.play().catch(() => {});
+          setIsPlaying(true);
           setTimeout(updateVideoBounds, 200);
         }
       },
@@ -289,7 +291,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
       }
     }
 
-    if (minDiff > 1.2) {
+    if (minDiff > 2.5) {
       return [];
     }
     return best.detections || [];
@@ -582,8 +584,16 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                 ref={videoRef}
                 src={activeVideoUrl}
                 onTimeUpdate={handleTimeUpdate}
-                onLoadedMetadata={updateVideoBounds}
-                onPlay={updateVideoBounds}
+                onLoadedMetadata={() => {
+                  updateVideoBounds();
+                  // Autoplay as soon as metadata is ready
+                  if (videoRef.current) {
+                    videoRef.current.play().catch(() => {});
+                    setIsPlaying(true);
+                  }
+                }}
+                onPlay={() => { updateVideoBounds(); setIsPlaying(true); }}
+                onPause={() => setIsPlaying(false)}
                 controls={false}
                 loop
                 muted
@@ -940,9 +950,9 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                       }
                     }
                   }}
-                  style={{ background: 'none', border: 'none', color: 'var(--accent-signal)', cursor: 'pointer' }}
+                  style={{ background: 'none', border: 'none', color: 'var(--accent-signal)', cursor: 'pointer', padding: '2px 6px', fontSize: '18px', lineHeight: 1 }}
                 >
-                  <Play size={14} />
+                  {isPlaying ? '⏸' : '▶'}
                 </button>
                 <span>TIME: {currentVideoTime.toFixed(1)}s</span>
               </div>

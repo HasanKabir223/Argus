@@ -1,147 +1,151 @@
 """
-Face Embedding Generation Service — Real 512-D ArcFace Deep Neural Network
-Uses ArcFace MobileFaceNet / ResNet (WebFace600K pretrained) via ONNX Runtime for genuine
-biometric identity discrimination (512-D normalized feature vectors).
+Face Embedding Generation Service — ArcFace 512-D via insightface buffalo_s
+Uses insightface 1.0+ (pure Python, no C++ compiler required).
+Model: w600k_mbf.onnx (MobileFaceNet trained with ArcFace loss on WebFace600K)
+Produces 512-D L2-normalized embeddings; cosine similarity == inner dot product.
 """
 
-import os
 import cv2
 import numpy as np
+import os
 from typing import List, Optional, Dict, Any
 
 try:
-    import onnxruntime as ort
-    HAS_ONNX = True
+    from insightface.model_zoo import get_model as insightface_get_model
+    HAS_INSIGHTFACE = True
 except ImportError:
-    HAS_ONNX = False
+    HAS_INSIGHTFACE = False
 
 
 class ArcFaceDeepEmbedder:
     """
-    Production-grade 512-D ArcFace Feature Extractor Engine.
-    Uses ONNX Runtime on CPU/GPU with MobileFaceNet WebFace600K weights.
-    Produces L2-normalized unit sphere embeddings where cosine similarity == inner dot product.
+    512-D ArcFace Feature Extractor via insightface buffalo_s.
+    Uses the w600k_mbf.onnx recognition model (MobileFaceNet + ArcFace loss).
+    Produces L2-normalized unit-sphere embeddings where cosine similarity
+    equals inner dot product — compatible with FAISS IndexFlatIP / HNSW.
     """
     def __init__(
         self,
         embedding_dim: int = 512,
-        model_name: str = "arcface_w600k_mbf",
+        model_name: str = "buffalo_s",
         hash_bits: int = 64
     ):
-        self.embedding_dim = embedding_dim
+        self.embedding_dim = 512            # ArcFace always 512-D
         self.model_name = model_name
-        self.session: Optional[Any] = None
-        self.input_name: str = "input.1"
-        self._backend = "arcface_onnx_512d"
-        
+        self._recognizer = None
+        self._backend = "arcface_512d_fallback"
+
         self._init_model()
 
     def _init_model(self):
-        """
-        Locates and loads the pretrained ArcFace ONNX model.
-        """
-        candidate_paths = [
-            os.path.expanduser("~/.insightface/models/buffalo_s/w600k_mbf.onnx"),
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models", "w600k_mbf.onnx")),
-            os.path.expanduser("~/.insightface/models/buffalo_l/w600k_r50.onnx"),
-        ]
+        if not HAS_INSIGHTFACE:
+            print("[ArcFaceEmbedder] insightface not installed. Using fallback.")
+            return
 
-        model_path = None
-        for p in candidate_paths:
-            if os.path.exists(p):
-                model_path = p
-                break
+        # Model is auto-downloaded by insightface on first FaceAnalysis.prepare() call.
+        # We load the recognition ONNX directly via model_zoo to avoid needing
+        # the detection module alongside it.
+        model_path = os.path.join(
+            os.path.expanduser("~"), ".insightface", "models",
+            "buffalo_s", "w600k_mbf.onnx"
+        )
 
-        if model_path and HAS_ONNX:
+        # Trigger auto-download if not present
+        if not os.path.isfile(model_path):
             try:
-                opts = ort.SessionOptions()
-                opts.intra_op_num_threads = 2
-                opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-                self.session = ort.InferenceSession(model_path, opts, providers=["CPUExecutionProvider"])
-                self.input_name = self.session.get_inputs()[0].name
-                self._backend = f"arcface_onnx_512d ({os.path.basename(model_path)})"
-                print(f"[ArcFaceEmbedder] Loaded real ArcFace ONNX model from {model_path}")
-            except Exception as e:
-                print(f"[ArcFaceEmbedder] Warning: Failed to load ONNX model ({e}). Using vectorized fallback.")
-                self.session = None
-        else:
-            print("[ArcFaceEmbedder] Warning: ONNX ArcFace model not found. Using vectorized fallback.")
-            self.session = None
+                from insightface.app import FaceAnalysis
+                _app = FaceAnalysis(name="buffalo_s", providers=["CPUExecutionProvider"])
+                _app.prepare(ctx_id=0)
+                print("[ArcFaceEmbedder] Downloaded buffalo_s models.")
+            except Exception:
+                pass
+
+        if not os.path.isfile(model_path):
+            print(f"[ArcFaceEmbedder] w600k_mbf.onnx not found at {model_path}. Using fallback.")
+            return
+
+        try:
+            self._recognizer = insightface_get_model(
+                model_path,
+                providers=["CPUExecutionProvider"]
+            )
+            self._recognizer.prepare(ctx_id=0)
+            self._backend = "arcface_512d (buffalo_s/w600k_mbf)"
+            print(f"[ArcFaceEmbedder] Loaded ArcFace 512-D (ArcFaceONNX) from {model_path}")
+        except Exception as e:
+            print(f"[ArcFaceEmbedder] Failed to load ArcFace: {e}. Using fallback.")
+            self._recognizer = None
 
     @property
     def backend_name(self) -> str:
         return self._backend
 
     def _normalize(self, vector: np.ndarray) -> np.ndarray:
-        """L2 normalizes feature vector: v = v / ||v||_2"""
+        """L2 normalize: v = v / ||v||_2"""
         norm = np.linalg.norm(vector, ord=2, axis=-1, keepdims=True)
         norm = np.maximum(norm, 1e-12)
         return vector / norm
 
     def get_embedding(self, face_crop: np.ndarray) -> np.ndarray:
         """
-        Extracts a single 512-D L2-normalized ArcFace embedding from a face image.
+        Extracts a 512-D L2-normalized ArcFace embedding from a face image.
+        Accepts any BGR image — resizes to 112x112 internally if needed.
+        Called by gallery_manager and cctv_service with pre-aligned crops.
         """
-        if face_crop is None or face_crop.size == 0:
+        if face_crop is None or (isinstance(face_crop, np.ndarray) and face_crop.size == 0):
             return np.zeros(self.embedding_dim, dtype=np.float32)
 
-        if self.session is not None:
-            return self._embed_onnx(face_crop)
-        else:
-            return self._embed_fallback(face_crop)
+        if self._recognizer is not None:
+            return self._embed_arcface(face_crop)
+        return self._embed_fallback(face_crop)
 
-    def _embed_onnx(self, face_crop: np.ndarray) -> np.ndarray:
+    def _embed_arcface(self, face_crop: np.ndarray) -> np.ndarray:
         """
-        Genuine ArcFace 512-D neural inference via ONNX Runtime.
-        Preprocesses face crop: canonical 112x112, BGR->RGB, zero-mean unit-variance normalized.
+        Runs ArcFace recognition model on a pre-aligned face crop.
+        The insightface buffalo_s recognizer expects 112x112 BGR input.
+        get_feat() returns an already L2-normalized 512-D feature vector.
         """
         try:
-            # 1. Resize to ArcFace 112x112 standard input dimension
-            img = cv2.resize(face_crop, (112, 112))
+            img = face_crop.copy()
+
+            # Ensure correct size
+            if img.shape[:2] != (112, 112):
+                img = cv2.resize(img, (112, 112))
+
+            # Ensure 3-channel BGR
             if len(img.shape) == 2:
-                img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
             elif img.shape[2] == 4:
-                img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
-            else:
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
 
-            # 2. Standard ArcFace normalization: (x - 127.5) / 127.5
-            blob = (img.astype(np.float32) - 127.5) / 127.5
-            # NCHW layout: (1, 3, 112, 112)
-            blob = np.transpose(blob, (2, 0, 1))[np.newaxis, ...]
+            # get_feat() returns (1, 512) — flatten and L2 normalize
+            feat = self._recognizer.get_feat(img)
+            if feat.ndim > 1:
+                feat = feat[0]
+            feat = feat.astype(np.float32)
+            return self._normalize(feat)   # normalize: get_feat output is NOT pre-normalized
 
-            # 3. ONNX forward pass
-            raw_emb = self.session.run(None, {self.input_name: blob})[0][0]
-            
-            # 4. L2 unit sphere normalization
-            return self._normalize(raw_emb.astype(np.float32))
         except Exception as e:
+            print(f"[ArcFaceEmbedder] _embed_arcface error: {e}")
             return self._embed_fallback(face_crop)
 
     def _embed_fallback(self, face_crop: np.ndarray) -> np.ndarray:
-        """
-        Zero-mean normalized gradient & frequency projection fallback.
-        Ensures mean-subtracted spherical distribution across all quadrants.
-        """
+        """Gradient+DCT fallback — used only when ArcFace model is unavailable."""
         try:
             resized = cv2.resize(face_crop, (112, 112))
             gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY) if len(resized.shape) == 3 else resized
             gray_f = (gray.astype(np.float32) - np.mean(gray)) / (np.std(gray) + 1e-6)
 
-            # Multi-scale DCT frequency features
+            # 512-D: DCT (64) + gradient patches (448)
             dct = cv2.dct(cv2.resize(gray_f, (32, 32)))
-            dct_feat = dct[:16, :16].flatten()
+            dct_feat = dct[:8, :8].flatten()   # 64 values
 
-            # Multi-orientation Sobel gradient features
             gx = cv2.Sobel(gray_f, cv2.CV_32F, 1, 0, ksize=3)
             gy = cv2.Sobel(gray_f, cv2.CV_32F, 0, 1, ksize=3)
-            grad_feat = np.concatenate([
-                cv2.resize(gx, (12, 12)).flatten(),
-                cv2.resize(gy, (12, 12)).flatten()
-            ])
+            gx_patches = cv2.resize(gx, (16, 14)).flatten()    # 224
+            gy_patches = cv2.resize(gy, (16, 14)).flatten()    # 224
 
-            raw = np.concatenate([dct_feat, grad_feat]).astype(np.float32)
-            # Subtract mean to remove positive bias
+            raw = np.concatenate([dct_feat, gx_patches, gy_patches]).astype(np.float32)
             raw = raw - np.mean(raw)
 
             if len(raw) < self.embedding_dim:
@@ -153,14 +157,11 @@ class ArcFaceDeepEmbedder:
             return np.zeros(self.embedding_dim, dtype=np.float32)
 
     def get_embedding_from_aligned(self, aligned_crop_112: np.ndarray) -> np.ndarray:
-        if aligned_crop_112 is None or aligned_crop_112.size == 0:
-            return np.zeros(self.embedding_dim, dtype=np.float32)
         return self.get_embedding(aligned_crop_112)
 
     def get_embeddings_batch(self, face_crops: List[np.ndarray]) -> np.ndarray:
         if not face_crops:
             return np.empty((0, self.embedding_dim), dtype=np.float32)
-
         embeddings = [self.get_embedding(crop) for crop in face_crops if crop is not None]
         if not embeddings:
             return np.empty((0, self.embedding_dim), dtype=np.float32)
@@ -174,7 +175,7 @@ class ArcFaceDeepEmbedder:
         }
 
 
-# Aliases for backward compatibility
+# Aliases — nothing else in the codebase needs to change
 ArcFaceEmbedder = ArcFaceDeepEmbedder
 FaceEmbedder = ArcFaceDeepEmbedder
 MobileNetV3FaceEmbedder = ArcFaceDeepEmbedder
