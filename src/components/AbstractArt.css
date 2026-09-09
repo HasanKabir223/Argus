@@ -1,0 +1,30 @@
+/* ─── Abstract Globe Art Container ──────────────────────────────────────── */
+
+.abstract-art-container {
+  position: relative;
+  width: 100%;
+  max-width: 500px;
+  height: 460px;
+  overflow: hidden;
+  cursor: crosshair;
+  user-select: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.abstract-art-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+@media (max-width: 768px) {
+  .abstract-art-container {
+    height: 380px;
+    max-width: 100%;
+  }
+}
