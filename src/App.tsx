@@ -225,9 +225,6 @@ function App() {
     // PENDING REVIEW for a supervisor to look at, not a pipeline decision.
   };
 
-  if (isBooting) {
-    return <LoadingScreen />;
-  }
 
   const activeMatch = matches.find(m => m.id === selectedMatchId);
   const activeMatchSightingHistory = activeMatch
