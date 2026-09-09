@@ -20,9 +20,11 @@ export const LAYER_CONFIGS: Record<
     shortName: string;
     description: string;
     url: string;
+    overlayUrl?: string;
     attribution: string;
     subdomains?: string[];
     maxZoom?: number;
+    maxNativeZoom?: number;
     tileClass: string;
   }
 > = {
@@ -30,11 +32,12 @@ export const LAYER_CONFIGS: Record<
     name: 'TACTICAL DARK HD',
     shortName: 'DARK TACTICAL',
     description: 'Nocturnal vector cartography for surveillance & tracking',
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-    attribution: '&copy; CARTO &copy; OpenStreetMap',
-    subdomains: ['a', 'b', 'c', 'd'],
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    overlayUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+    attribution: '&copy; Esri &copy; OpenStreetMap contributors',
     maxZoom: 19,
-    tileClass: 'hd-crisp-tile'
+    maxNativeZoom: 16,
+    tileClass: 'hd-dark-tile'
   },
   satellite_hd: {
     name: 'SATELLITE RECON HD',
@@ -43,6 +46,7 @@ export const LAYER_CONFIGS: Record<
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     attribution: '&copy; Esri, Maxar, Earthstar Geographics, USDA, USGS',
     maxZoom: 19,
+    maxNativeZoom: 18,
     tileClass: 'hd-satellite-tile'
   },
   terrain_hd: {
@@ -52,17 +56,18 @@ export const LAYER_CONFIGS: Record<
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
     attribution: '&copy; Esri, HERE, Garmin, USGS, NOAA',
     maxZoom: 19,
+    maxNativeZoom: 18,
     tileClass: 'hd-terrain-tile'
   },
   cyber_hd: {
     name: 'CYBER MATRIX HD',
     shortName: 'CYBER MATRIX',
     description: 'Full transport infrastructure, roads, and transit routing',
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-    attribution: '&copy; CARTO &copy; OpenStreetMap',
-    subdomains: ['a', 'b', 'c', 'd'],
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+    attribution: '&copy; Esri &copy; OpenStreetMap contributors',
     maxZoom: 19,
-    tileClass: 'hd-crisp-tile'
+    maxNativeZoom: 18,
+    tileClass: 'hd-cyber-tile'
   }
 };
 
@@ -545,13 +550,26 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
           url={currentLayerConfig.url}
           attribution={currentLayerConfig.attribution}
           subdomains={currentLayerConfig.subdomains || []}
-          maxZoom={19}
-          maxNativeZoom={18}
+          maxZoom={currentLayerConfig.maxZoom || 19}
+          maxNativeZoom={currentLayerConfig.maxNativeZoom || 18}
           keepBuffer={8}
           updateWhenIdle={false}
           updateWhenZooming={false}
           className={currentLayerConfig.tileClass}
         />
+        {currentLayerConfig.overlayUrl && (
+          <TileLayer
+            key={`${activeLayer}-overlay`}
+            url={currentLayerConfig.overlayUrl}
+            attribution=""
+            maxZoom={currentLayerConfig.maxZoom || 19}
+            maxNativeZoom={currentLayerConfig.maxNativeZoom || 16}
+            keepBuffer={8}
+            updateWhenIdle={false}
+            updateWhenZooming={false}
+            className="hd-reference-tile"
+          />
+        )}
 
         <MapController
           selectedPersonId={selectedPersonId}

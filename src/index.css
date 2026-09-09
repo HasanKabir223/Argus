@@ -299,6 +299,25 @@ input:focus-visible,
 }
 
 /* High-Definition Tile Contrast & Crisp Rendering */
+.hd-dark-tile .leaflet-tile {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  filter: brightness(0.92) contrast(1.22) saturate(1.05);
+}
+
+.hd-reference-tile .leaflet-tile {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  filter: brightness(1.15) contrast(1.1);
+  pointer-events: none !important;
+}
+
+.hd-cyber-tile .leaflet-tile {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  filter: invert(100%) hue-rotate(190deg) brightness(0.82) contrast(1.25) saturate(0.85);
+}
+
 .hd-crisp-tile .leaflet-tile {
   image-rendering: -webkit-optimize-contrast;
   image-rendering: crisp-edges;
