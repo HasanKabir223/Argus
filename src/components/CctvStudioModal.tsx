@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Upload, Play, RefreshCw, MapPin, CheckCircle,
+  Upload, RefreshCw, MapPin, CheckCircle,
   AlertTriangle, X, Radio, Scan, Zap
 } from 'lucide-react';
 import {
@@ -399,7 +399,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
             onClick={() => fileInputRef.current?.click()}
             style={{
               border: isDragging ? '2px dashed var(--accent-signal)' : '1px dashed var(--border-hairline)',
-              backgroundColor: isDragging ? 'rgba(0, 217, 163, 0.08)' : 'rgba(18, 22, 31, 0.7)',
+              backgroundColor: isDragging ? 'rgba(59, 130, 246, 0.08)' : 'rgba(18, 22, 31, 0.7)',
               padding: '16px',
               textAlign: 'center',
               borderRadius: '2px',
@@ -422,7 +422,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
               width: '40px',
               height: '40px',
               borderRadius: '50%',
-              backgroundColor: 'rgba(0, 217, 163, 0.12)',
+              backgroundColor: 'rgba(59, 130, 246, 0.12)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -457,7 +457,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
               fontWeight: 700,
               fontFamily: "'IBM Plex Mono', monospace",
               cursor: isProcessing ? 'wait' : 'pointer',
-              boxShadow: '0 4px 16px rgba(0, 217, 163, 0.25)',
+              boxShadow: '0 4px 16px rgba(59, 130, 246, 0.25)',
               borderRadius: '2px'
             }}
           >
@@ -470,8 +470,8 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
               fontSize: '0.72rem',
               color: 'var(--accent-signal)',
               padding: '6px 10px',
-              backgroundColor: 'rgba(0, 217, 163, 0.08)',
-              border: '1px solid rgba(0, 217, 163, 0.2)',
+              backgroundColor: 'rgba(59, 130, 246, 0.08)',
+              border: '1px solid rgba(59, 130, 246, 0.2)',
               fontFamily: "'IBM Plex Mono', monospace"
             }}>
               {uploadStatus}
@@ -498,7 +498,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                       padding: '8px 10px',
                       borderRadius: '2px',
                       border: isSelected ? '1px solid var(--accent-signal)' : '1px solid var(--border-hairline)',
-                      backgroundColor: isSelected ? 'rgba(0, 217, 163, 0.1)' : 'var(--bg-panel)',
+                      backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-panel)',
                       cursor: 'pointer',
                       transition: 'all 0.15s ease'
                     }}
@@ -511,7 +511,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                         fontSize: '0.62rem',
                         fontFamily: "'IBM Plex Mono', monospace",
                         color: 'var(--accent-signal)',
-                        backgroundColor: 'rgba(0, 217, 163, 0.15)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.15)',
                         padding: '1px 4px'
                       }}>
                         {clip.camera_id.split(' ')[0]}
@@ -640,8 +640,8 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                   left: 0,
                   right: 0,
                   height: '2px',
-                  background: 'linear-gradient(90deg, transparent, #00D9A3, #38BDF8, transparent)',
-                  boxShadow: '0 0 15px #00D9A3, 0 0 30px #38BDF8',
+                  background: 'linear-gradient(90deg, transparent, #3B82F6, #60A5FA, transparent)',
+                  boxShadow: '0 0 15px #3B82F6, 0 0 30px #60A5FA',
                   animation: 'scanLaser 1.8s ease-in-out infinite',
                   pointerEvents: 'none'
                 }} />
@@ -650,7 +650,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{
-                      backgroundColor: pipelinePhase === 'phase1_detecting' ? 'rgba(0, 217, 163, 0.2)' : 'rgba(56, 189, 248, 0.2)',
+                      backgroundColor: pipelinePhase === 'phase1_detecting' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(56, 189, 248, 0.2)',
                       border: `1px solid ${pipelinePhase === 'phase1_detecting' ? 'var(--accent-signal)' : '#38BDF8'}`,
                       color: pipelinePhase === 'phase1_detecting' ? 'var(--accent-signal)' : '#38BDF8',
                       padding: '4px 8px',
@@ -698,7 +698,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                           position: 'absolute',
                           inset: 0,
                           borderRadius: '50%',
-                          border: '2px dashed #00D9A3',
+                          border: '2px dashed #3B82F6',
                           animation: 'spin 3s linear infinite'
                         }} />
                         <div style={{
@@ -708,7 +708,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                           border: '1.5px solid #38BDF8',
                           animation: 'spinReverse 2s linear infinite'
                         }} />
-                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00D9A3' }}>
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3B82F6' }}>
                           <Scan size={20} />
                         </div>
                       </div>
@@ -756,7 +756,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                                 flexDirection: 'column',
                                 alignItems: 'center',
                                 gap: '4px',
-                                boxShadow: `0 4px 14px ${matched ? (isConfirmed ? 'rgba(0, 217, 163, 0.25)' : 'rgba(245, 158, 11, 0.25)') : 'rgba(56, 189, 248, 0.15)'}`,
+                                boxShadow: `0 4px 14px ${matched ? (isConfirmed ? 'rgba(59, 130, 246, 0.25)' : 'rgba(245, 158, 11, 0.25)') : 'rgba(56, 189, 248, 0.15)'}`,
                                 animation: 'fadeInScale 0.25s ease-out'
                               }}
                             >
@@ -830,7 +830,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                       width: '100%',
                       height: '100%',
                       background: pipelinePhase === 'phase1_detecting'
-                        ? 'linear-gradient(90deg, #00D9A3, #38BDF8)'
+                        ? 'linear-gradient(90deg, #3B82F6, #60A5FA)'
                         : 'linear-gradient(90deg, #38BDF8, #F59E0B)',
                       animation: 'progressIndeterminate 1.2s infinite'
                     }} />
@@ -864,7 +864,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                       width: isPixel ? `${boxWidth}px` : `${boxWidth}%`,
                       height: isPixel ? `${boxHeight}px` : `${boxHeight}%`,
                       border: `2px solid ${borderColor}`,
-                      boxShadow: `0 0 16px ${borderColor}, inset 0 0 8px rgba(0, 217, 163, 0.2)`,
+                      boxShadow: `0 0 16px ${borderColor}, inset 0 0 8px rgba(59, 130, 246, 0.2)`,
                       boxSizing: 'border-box',
                       transition: 'all 0.08s ease-out'
                     }}
@@ -970,7 +970,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                 <button
                   onClick={() => setActiveTab('matches')}
                   style={{
-                    backgroundColor: activeTab === 'matches' ? 'rgba(0, 217, 163, 0.15)' : 'var(--bg-panel)',
+                    backgroundColor: activeTab === 'matches' ? 'rgba(59, 130, 246, 0.15)' : 'var(--bg-panel)',
                     border: activeTab === 'matches' ? '1px solid var(--accent-signal)' : '1px solid var(--border-hairline)',
                     color: activeTab === 'matches' ? 'var(--accent-signal)' : 'var(--text-secondary)',
                     padding: '5px 12px',
@@ -1025,7 +1025,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '10px',
-                        boxShadow: `0 4px 20px ${isConfirmed ? 'rgba(0, 217, 163, 0.1)' : 'rgba(255, 170, 0, 0.1)'}`
+                        boxShadow: `0 4px 20px ${isConfirmed ? 'rgba(59, 130, 246, 0.1)' : 'rgba(255, 170, 0, 0.1)'}`
                       }}
                     >
                       {/* Top Comparison Row: Detected Crop vs Watchlist Dossier */}
@@ -1119,7 +1119,7 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: '6px',
-                            backgroundColor: 'rgba(0, 217, 163, 0.12)',
+                            backgroundColor: 'rgba(59, 130, 246, 0.12)',
                             color: 'var(--accent-signal)',
                             border: '1px solid var(--accent-signal)',
                             padding: '6px',

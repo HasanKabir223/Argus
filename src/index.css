@@ -4,13 +4,17 @@
   --bg-void: #0A0E14;
   --bg-panel: #12161F;
   --bg-panel-raised: #1A2029;
-  --border-hairline: #262D3A;
+  --border-hairline: #1E2533;
   --text-primary: #E8ECF1;
-  --text-secondary: #8892A0;
-  --accent-signal: #00D9A3;
+  --text-secondary: #566170;
+  --text-dim: #2E3744;
+  --accent: #3B82F6;
+  --accent-signal: #3B82F6;
+  --accent-dim: rgba(59, 130, 246, 0.08);
+  --accent-glow: rgba(59, 130, 246, 0.25);
   --accent-alert: #FF4757;
   --accent-amber: #FFB830;
-  --accent-muted: #3D4759;
+  --accent-muted: #1E2533;
   --panel-w: 360px;
 }
 
@@ -26,7 +30,7 @@ body {
   font-family: 'Inter', sans-serif;
   margin: 0;
   padding: 0;
-  overflow: hidden;
+  overflow: auto;
   width: 100vw;
   height: 100vh;
 }
@@ -79,13 +83,13 @@ h1, h2, h3, h4, h5, h6, .mono-display {
 }
 
 .button-primary {
-  background: rgba(0, 217, 163, 0.1);
+  background: rgba(59, 130, 246, 0.1);
   border-color: var(--accent-signal);
   color: var(--accent-signal);
 }
 
 .button-primary:hover {
-  background: rgba(0, 217, 163, 0.2);
+  background: rgba(59, 130, 246, 0.2);
   border-color: var(--accent-signal);
 }
 
@@ -129,9 +133,9 @@ h1, h2, h3, h4, h5, h6, .mono-display {
 }
 
 .badge-confirmed {
-  background: rgba(0, 217, 163, 0.12);
+  background: rgba(59, 130, 246, 0.12);
   color: var(--accent-signal);
-  border: 1px solid rgba(0, 217, 163, 0.35);
+  border: 1px solid rgba(59, 130, 246, 0.35);
 }
 
 .badge-dismissed {
@@ -176,7 +180,7 @@ h1, h2, h3, h4, h5, h6, .mono-display {
 }
 
 .filter-tab.active {
-  background: rgba(0, 217, 163, 0.1);
+  background: rgba(59, 130, 246, 0.12);
   border-color: var(--accent-signal);
   color: var(--accent-signal);
 }
@@ -336,17 +340,17 @@ input:focus-visible,
   0% {
     transform: scale(0.95);
     opacity: 0.95;
-    box-shadow: 0 0 0 0 rgba(0, 217, 163, 0.75);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.75);
   }
   65% {
     transform: scale(1.14);
     opacity: 0.4;
-    box-shadow: 0 0 0 14px rgba(0, 217, 163, 0);
+    box-shadow: 0 0 0 14px rgba(59, 130, 246, 0);
   }
   100% {
     transform: scale(0.95);
     opacity: 0.95;
-    box-shadow: 0 0 0 0 rgba(0, 217, 163, 0);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
   }
 }
 
@@ -361,11 +365,11 @@ input:focus-visible,
 @keyframes timeline-now-pulse {
   0%, 100% {
     opacity: 1;
-    box-shadow: 0 0 0 0 rgba(0, 217, 163, 0.5);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5);
   }
   50% {
     opacity: 0.55;
-    box-shadow: 0 0 6px 1px rgba(0, 217, 163, 0.5);
+    box-shadow: 0 0 6px 1px rgba(59, 130, 246, 0.5);
   }
 }
 

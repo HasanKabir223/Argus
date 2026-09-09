@@ -40,9 +40,9 @@ export const GlobeView: React.FC<GlobeViewProps> = ({ matches, selectedPersonId 
     const hasRecentAlert = cpMatches.some(m => m.status === 'PENDING REVIEW');
     const hasConfirmed = cpMatches.some(m => m.status === 'CONFIRMED');
 
-    let color = '#3D4759'; // --accent-muted
+    let color = '#1E2533'; // --accent-muted
     if (hasRecentAlert) color = '#FF4757'; // --accent-alert
-    else if (hasConfirmed) color = '#00D9A3'; // --accent-signal
+    else if (hasConfirmed) color = '#3B82F6'; // --accent-signal
 
     return {
       lat: cp.lat,
@@ -65,7 +65,7 @@ export const GlobeView: React.FC<GlobeViewProps> = ({ matches, selectedPersonId 
       return {
         lat: cp.lat,
         lng: cp.lng,
-        color: hasRecentAlert ? '#FF4757' : '#00D9A3',
+        color: hasRecentAlert ? '#FF4757' : '#3B82F6',
         maxR: hasRecentAlert ? 4.5 : 2.5,
         propagationSpeed: 1.8,
         repeatPeriod: 1200
@@ -88,7 +88,7 @@ export const GlobeView: React.FC<GlobeViewProps> = ({ matches, selectedPersonId 
           startLng: startCp.lng,
           endLat: endCp.lat,
           endLng: endCp.lng,
-          color: ['rgba(0, 217, 163, 0.2)', '#00D9A3']
+          color: ['rgba(59, 130, 246, 0.2)', '#3B82F6']
         });
       }
     }
@@ -143,7 +143,7 @@ export const GlobeView: React.FC<GlobeViewProps> = ({ matches, selectedPersonId 
         backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
         backgroundColor="rgba(10, 14, 20, 1)"
         showAtmosphere={true}
-        atmosphereColor="#00D9A3"
+        atmosphereColor="#3B82F6"
         atmosphereAltitude={0.22}
 
         pointsData={pointsData}

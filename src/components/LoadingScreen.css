@@ -1,0 +1,362 @@
+/* ─── ARGUS Cinematic Boot Screen ───────────────────────────────────────── */
+
+.argus-boot-screen {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: var(--bg-void, #0A0E14);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 32px 40px;
+  box-sizing: border-box;
+  user-select: none;
+  overflow: hidden;
+  transition: opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1), transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.argus-boot-screen.boot-fade-out {
+  opacity: 0;
+  transform: scale(1.03);
+  pointer-events: none;
+}
+
+/* Background Ambient Glow & Grid Matrix */
+.boot-ambient-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 650px;
+  height: 650px;
+  background: radial-gradient(
+    circle,
+    rgba(59, 130, 246, 0.14) 0%,
+    rgba(30, 58, 110, 0.06) 40%,
+    transparent 70%
+  );
+  pointer-events: none;
+  filter: blur(40px);
+}
+
+.boot-grid-matrix {
+  position: absolute;
+  inset: 0;
+  background-image: 
+    linear-gradient(rgba(30, 37, 51, 0.25) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 37, 51, 0.25) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: center center;
+  opacity: 0.6;
+  pointer-events: none;
+  mask-image: radial-gradient(circle at center, black 40%, transparent 80%);
+  -webkit-mask-image: radial-gradient(circle at center, black 40%, transparent 80%);
+}
+
+/* ─── Header ────────────────────────────────────────────────────────────── */
+
+.boot-header {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-mono, 'IBM Plex Mono', monospace);
+}
+
+.boot-tag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  color: var(--accent, #3B82F6);
+  font-weight: 600;
+}
+
+.boot-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--accent, #3B82F6);
+  box-shadow: 0 0 10px var(--accent, #3B82F6);
+  animation: boot-dot-pulse 1.6s infinite ease-in-out;
+}
+
+@keyframes boot-dot-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+.boot-clock {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--text-secondary, #566170);
+}
+
+.boot-skip-btn {
+  background: transparent;
+  border: 1px solid var(--border-hairline, #1E2533);
+  color: var(--text-secondary, #566170);
+  font-family: var(--font-mono, 'IBM Plex Mono', monospace);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  padding: 4px 10px;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: all 0.2s ease;
+}
+
+.boot-skip-btn:hover {
+  border-color: var(--accent, #3B82F6);
+  color: var(--accent, #3B82F6);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+/* ─── Center Body ───────────────────────────────────────────────────────── */
+
+.boot-center {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin: auto 0;
+}
+
+/* Reticle Aperture System */
+.boot-reticle-system {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 28px;
+}
+
+.boot-ring {
+  position: absolute;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.boot-ring-outer {
+  inset: 0;
+  border: 1.5px dashed rgba(59, 130, 246, 0.35);
+  animation: boot-spin-clockwise 22s linear infinite;
+}
+
+.boot-ring-mid {
+  inset: 16px;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-left: 2px solid var(--accent, #3B82F6);
+  border-right: 2px solid var(--accent, #3B82F6);
+  animation: boot-spin-counter 12s linear infinite;
+}
+
+.boot-ring-inner {
+  inset: 32px;
+  border: 1px dashed rgba(96, 165, 250, 0.4);
+  animation: boot-spin-clockwise 8s linear infinite;
+}
+
+.boot-scan-laser {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 70px;
+  height: 2px;
+  transform-origin: 0 0;
+  background: linear-gradient(90deg, var(--accent, #3B82F6), transparent);
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.8);
+  animation: boot-radar-sweep 3s linear infinite;
+}
+
+@keyframes boot-radar-sweep {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes boot-spin-clockwise {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes boot-spin-counter {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(-360deg); }
+}
+
+/* Core Iris */
+.boot-core-logo {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(18, 22, 31, 0.9);
+  border: 1px solid var(--accent, #3B82F6);
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+}
+
+.boot-iris-center {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #93C5FD 0%, #3B82F6 100%);
+  box-shadow: 0 0 12px #3B82F6;
+  position: relative;
+}
+
+.boot-iris-reticle {
+  position: absolute;
+  inset: -6px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+}
+
+/* Brand Headline */
+.boot-brand {
+  margin-bottom: 32px;
+}
+
+.boot-title {
+  font-family: var(--font-mono, 'IBM Plex Mono', monospace);
+  font-size: 38px;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  color: var(--text-primary, #E8ECF1);
+  margin: 0 0 8px 0;
+  text-shadow: 0 0 30px rgba(59, 130, 246, 0.45);
+}
+
+.boot-subtitle {
+  font-family: var(--font-mono, 'IBM Plex Mono', monospace);
+  font-size: 9px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--text-secondary, #566170);
+  font-weight: 500;
+}
+
+/* Progress Section */
+.boot-progress-container {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.boot-progress-bar-rail {
+  position: relative;
+  width: 100%;
+  height: 3px;
+  background: rgba(30, 37, 51, 0.8);
+  border-radius: 2px;
+  overflow: visible;
+}
+
+.boot-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #1E3A8A 0%, #3B82F6 50%, #60A5FA 100%);
+  border-radius: 2px;
+  transition: width 0.08s linear;
+  box-shadow: 0 0 14px rgba(59, 130, 246, 0.6);
+}
+
+.boot-progress-glow-head {
+  position: absolute;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  box-shadow: 0 0 10px #60A5FA, 0 0 20px #3B82F6;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition: left 0.08s linear;
+}
+
+.boot-progress-metrics {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--font-mono, 'IBM Plex Mono', monospace);
+}
+
+.boot-stage-label {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--text-primary, #E8ECF1);
+  font-weight: 600;
+  text-align: left;
+}
+
+.boot-percentage {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--accent, #3B82F6);
+  font-variant-numeric: tabular-nums;
+}
+
+.boot-stage-detail {
+  font-family: var(--font-mono, 'IBM Plex Mono', monospace);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim, #2E3744);
+  text-align: left;
+}
+
+/* ─── Footer ────────────────────────────────────────────────────────────── */
+
+.boot-footer {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-mono, 'IBM Plex Mono', monospace);
+  font-size: 9px;
+  border-top: 1px solid var(--border-hairline, #1E2533);
+  padding-top: 14px;
+}
+
+.boot-footer-item {
+  display: flex;
+  gap: 6px;
+}
+
+.item-label {
+  color: var(--text-secondary, #566170);
+  letter-spacing: 0.1em;
+}
+
+.item-val {
+  color: var(--text-primary, #E8ECF1);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+/* ─── Responsive ────────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .argus-boot-screen {
+    padding: 20px;
+  }
+  .boot-title {
+    font-size: 28px;
+  }
+  .boot-clock,
+  .boot-footer-item:nth-child(2) {
+    display: none;
+  }
+}

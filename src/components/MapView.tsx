@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { CHECKPOINTS, type Match } from '../data/mockData';
-import { Layers, Sparkles, UserCheck, Globe, Mountain, Satellite, ShieldAlert } from 'lucide-react';
+import { Layers, Sparkles, UserCheck, Globe, Mountain, Satellite } from 'lucide-react';
 
 interface MapViewProps {
   matches: Match[];
@@ -93,9 +93,9 @@ function createCheckpointIcon(status: 'alert' | 'confirmed' | 'idle', name: stri
     pulseClass = 'tactical-marker-alert';
     glowFilter = 'drop-shadow(0 0 8px rgba(255, 71, 87, 0.8))';
   } else if (status === 'confirmed') {
-    primaryColor = '#00D9A3'; // --accent-signal
+    primaryColor = '#3B82F6'; // --accent-signal
     pulseClass = 'tactical-marker-signal';
-    glowFilter = 'drop-shadow(0 0 8px rgba(0, 217, 163, 0.8))';
+    glowFilter = 'drop-shadow(0 0 8px rgba(59, 130, 246, 0.8))';
   }
 
   const svgHtml = `
@@ -162,7 +162,7 @@ function createCheckpointIcon(status: 'alert' | 'confirmed' | 'idle', name: stri
 
 function createSuspectSightingIcon(match: Match, _isSelected: boolean, orderIndex?: number, isTrajectory?: boolean) {
   const isConfirmed = match.status === 'CONFIRMED';
-  const ringColor = isConfirmed ? '#00D9A3' : '#FF4757';
+  const ringColor = isConfirmed ? '#3B82F6' : '#FF4757';
   const imgUrl = match.faceCropUrl || match.referencePhotoUrl || 'http://localhost:8000/static/gallery/placeholder.jpg';
 
   const orderBadge = isTrajectory && orderIndex !== undefined
@@ -178,7 +178,7 @@ function createSuspectSightingIcon(match: Match, _isSelected: boolean, orderInde
         height: 58px;
         border-radius: 50%;
         border: 2px solid ${ringColor};
-        background: ${isConfirmed ? 'rgba(0, 217, 163, 0.22)' : 'rgba(255, 71, 87, 0.25)'};
+        background: ${isConfirmed ? 'rgba(59, 130, 246, 0.22)' : 'rgba(255, 71, 87, 0.25)'};
         animation: pulse 1.6s infinite;
         box-sizing: border-box;
       "></div>
@@ -333,7 +333,7 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
   // Center of the United States
   const usCenter: [number, number] = [38.8283, -98.5795];
   const [activeLayer, setActiveLayer] = useState<MapLayerType>('dark_hd');
-  const [showLayerSelector, setShowLayerSelector] = useState(false);
+  const [, ] = useState(false); // layer selector reserved for future use
   const [dispersionMode, setDispersionMode] = useState<'orbital' | 'wide'>('orbital');
   const [hudCoords, setHudCoords] = useState<{ lat: number; lng: number; zoom: number }>({
     lat: 38.8283,
@@ -562,7 +562,7 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
         {/* Tactical Tracer Anchor Lines connecting each suspect to their parent Checkpoint Hub */}
         {dispersedSightings.map((s, idx) => {
           const isConfirmed = s.match.status === 'CONFIRMED';
-          const lineColor = isConfirmed ? '#00D9A3' : '#FF4757';
+          const lineColor = isConfirmed ? '#3B82F6' : '#FF4757';
           return (
             <Polyline
               key={`anchor-line-${s.match.id}-${idx}`}
@@ -584,7 +584,7 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
             <Polyline
               positions={pathPositions}
               pathOptions={{
-                color: '#00D9A3',
+                color: '#3B82F6',
                 weight: 6,
                 opacity: 0.35,
                 lineCap: 'round',
@@ -595,7 +595,7 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
             <Polyline
               positions={pathPositions}
               pathOptions={{
-                color: '#00D9A3',
+                color: '#3B82F6',
                 weight: 2.5,
                 dashArray: '8 8',
                 opacity: 0.95,
@@ -636,18 +636,18 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
                   border: '1px solid var(--border-hairline, #262D3A)',
                   minWidth: '200px'
                 }}>
-                  <div style={{ fontWeight: 700, color: 'var(--accent-signal, #00D9A3)', marginBottom: '2px' }}>
+                  <div style={{ fontWeight: 700, color: 'var(--accent-signal, #3B82F6)', marginBottom: '2px' }}>
                     {cp.city}, {cp.state}
                   </div>
                   <div style={{ color: 'var(--text-primary)', fontSize: '11px', marginBottom: '6px' }}>
                     {cp.name}
                   </div>
-                  <div style={{ color: 'var(--text-secondary, #8892A0)', fontSize: '10px', marginBottom: '6px' }}>
+                  <div style={{ color: 'var(--text-secondary, #566170)', fontSize: '10px', marginBottom: '6px' }}>
                     COORD: {cp.lat.toFixed(4)}°N, {Math.abs(cp.lng).toFixed(4)}°W
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px', borderTop: '1px solid #222' }}>
                     <span>HOMELAND DETECTIONS:</span>
-                    <strong style={{ color: cpMatches.length > 0 ? 'var(--accent-signal, #00D9A3)' : 'var(--text-secondary, #8892A0)' }}>
+                    <strong style={{ color: cpMatches.length > 0 ? 'var(--accent-signal, #3B82F6)' : 'var(--text-secondary, #566170)' }}>
                       {cpMatches.length} LOGGED
                     </strong>
                   </div>
@@ -745,7 +745,7 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
-                  backgroundColor: isSelected ? 'rgba(0, 217, 163, 0.18)' : 'transparent',
+                  backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.18)' : 'transparent',
                   color: isSelected ? 'var(--accent-signal)' : 'var(--text-secondary)',
                   border: isSelected ? '1px solid var(--accent-signal)' : '1px solid transparent',
                   padding: '6px 10px',
@@ -766,7 +766,7 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
                   fontSize: '0.6rem',
                   padding: '1px 4px',
                   borderRadius: '2px',
-                  backgroundColor: isSelected ? 'rgba(0, 217, 163, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+                  backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.08)',
                   color: isSelected ? 'var(--accent-signal)' : 'var(--text-secondary)',
                   fontWeight: 700
                 }}>
@@ -780,7 +780,7 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
         {/* Real-Time Layer Switch HUD Banner */}
         {layerNotice && (
           <div style={{
-            backgroundColor: 'rgba(0, 217, 163, 0.16)',
+            backgroundColor: 'rgba(59, 130, 246, 0.16)',
             border: '1px solid var(--accent-signal)',
             color: 'var(--accent-signal)',
             padding: '5px 12px',
@@ -790,7 +790,7 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            boxShadow: '0 4px 16px rgba(0, 217, 163, 0.35)'
+            boxShadow: '0 4px 16px rgba(59, 130, 246, 0.35)'
           }}>
             <span>● {layerNotice}</span>
           </div>
@@ -848,7 +848,7 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
         {/* Selected Suspect Trajectory Mode Active Pill */}
         {selectedPersonId && (
           <div style={{
-            backgroundColor: 'rgba(0, 217, 163, 0.15)',
+            backgroundColor: 'rgba(59, 130, 246, 0.15)',
             border: '1px solid var(--accent-signal)',
             color: 'var(--accent-signal)',
             padding: '6px 10px',
@@ -857,7 +857,7 @@ export const MapView: React.FC<MapViewProps> = ({ matches, selectedPersonId, onS
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            boxShadow: '0 4px 12px rgba(0, 217, 163, 0.25)'
+            boxShadow: '0 4px 12px rgba(59, 130, 246, 0.25)'
           }}>
             <UserCheck size={13} />
             <span>INTERSTATE TRAJECTORY // {dispersedSightings.length} SIGHTINGS</span>

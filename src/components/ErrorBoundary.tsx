@@ -42,9 +42,9 @@ export class ErrorBoundary extends React.Component<React.PropsWithChildren, Erro
           <button
             onClick={() => window.location.reload()}
             style={{
-              background: 'rgba(0, 217, 163, 0.1)',
-              border: '1px solid #00D9A3',
-              color: '#00D9A3',
+              background: 'rgba(59, 130, 246, 0.1)',
+              border: '1px solid #3B82F6',
+              color: '#3B82F6',
               padding: '8px 16px',
               cursor: 'pointer',
               fontFamily: "'IBM Plex Mono', monospace",

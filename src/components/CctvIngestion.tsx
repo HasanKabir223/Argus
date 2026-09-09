@@ -7,7 +7,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 // --border-hairline: #262D3A
 // --text-primary: #E8ECF1
 // --text-secondary: #8892A0
-// --accent-signal: #00D9A3
+// --accent-signal: #3B82F6
 // --accent-alert: #FF4757
 // --accent-muted: #3D4759
 
@@ -635,7 +635,7 @@ export const CctvIngestion: React.FC<CctvIngestionProps> = ({
                 onClick={handleProcessVideo}
                 style={{
                   width: '100%',
-                  backgroundColor: 'rgba(0, 217, 163, 0.1)',
+                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
                   border: '1px solid var(--accent-signal)',
                   color: 'var(--accent-signal)',
                   padding: '12px 20px',
@@ -648,10 +648,10 @@ export const CctvIngestion: React.FC<CctvIngestionProps> = ({
                   transition: 'background 0.15s ease',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(0, 217, 163, 0.2)';
+                  e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.2)';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(0, 217, 163, 0.1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)';
                 }}
               >
                 Process Video
@@ -1044,7 +1044,7 @@ export const CctvIngestion: React.FC<CctvIngestionProps> = ({
                                 fontSize: '0.7rem',
                                 fontWeight: 500,
                                 color: 'var(--accent-signal)',
-                                backgroundColor: 'rgba(0, 217, 163, 0.12)',
+                                backgroundColor: 'rgba(59, 130, 246, 0.12)',
                                 border: '1px solid var(--accent-signal)',
                                 borderRadius: '3px',
                                 padding: '2px 7px',

@@ -170,6 +170,48 @@ export const HeroGlobe: React.FC = () => {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, [handleMouseMove]);
 
+  // Scroll rotation handling
+  useEffect(() => {
+    const scrollContainer = document.querySelector('.landing-root');
+    if (!scrollContainer || prefersReducedMotion) return;
+
+    let lastScrollY = scrollContainer.scrollTop;
+    let targetDelta = 0;
+    let currentDelta = 0;
+    let rafId: number;
+
+    const handleScroll = () => {
+      const scrollY = scrollContainer.scrollTop;
+      const delta = scrollY - lastScrollY;
+      lastScrollY = scrollY;
+      targetDelta += delta;
+    };
+
+    const animate = () => {
+      if (Math.abs(targetDelta - currentDelta) > 0.01 && globeEl.current) {
+        // Lerp
+        const step = (targetDelta - currentDelta) * 0.08;
+        currentDelta += step;
+
+        const currentPov = globeEl.current.pointOfView();
+        // 1 full revolution (360 degrees) per 3000px scrolled
+        const newLng = currentPov.lng - (step / 3000) * 360; 
+        
+        // Use 0 ms for instant pointOfView update without disrupting orbit controls
+        globeEl.current.pointOfView({ ...currentPov, lng: newLng }, 0);
+      }
+      rafId = requestAnimationFrame(animate);
+    };
+
+    scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+    rafId = requestAnimationFrame(animate);
+
+    return () => {
+      scrollContainer.removeEventListener('scroll', handleScroll);
+      cancelAnimationFrame(rafId);
+    };
+  }, [prefersReducedMotion]);
+
   // Telemetry cycle
   useEffect(() => {
     const timer = setInterval(() => {

@@ -107,9 +107,9 @@ export const MatchListPanel: React.FC<MatchListPanelProps> = ({
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <div style={{
-              backgroundColor: matches.length > 0 ? 'rgba(0, 217, 163, 0.15)' : 'rgba(255,255,255,0.05)',
+              backgroundColor: matches.length > 0 ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255,255,255,0.05)',
               color: matches.length > 0 ? 'var(--accent-signal)' : 'var(--text-secondary)',
-              border: `1px solid ${matches.length > 0 ? 'rgba(0, 217, 163, 0.3)' : 'var(--border-hairline)'}`,
+              border: `1px solid ${matches.length > 0 ? 'rgba(59, 130, 246, 0.3)' : 'var(--border-hairline)'}`,
               padding: '2px 8px',
               borderRadius: '2px',
               fontSize: '0.72rem',
@@ -200,8 +200,8 @@ export const MatchListPanel: React.FC<MatchListPanelProps> = ({
               width: '46px',
               height: '46px',
               borderRadius: '50%',
-              backgroundColor: 'rgba(0, 217, 163, 0.08)',
-              border: '1px solid rgba(0, 217, 163, 0.25)',
+              backgroundColor: 'rgba(59, 130, 246, 0.08)',
+              border: '1px solid rgba(59, 130, 246, 0.25)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'

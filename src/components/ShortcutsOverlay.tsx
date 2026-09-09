@@ -72,7 +72,7 @@ export const ShortcutsOverlay: React.FC<ShortcutsOverlayProps> = ({ onClose }) =
         zIndex: 400,
         backgroundColor: 'var(--bg-panel)',
         border: '1px solid var(--accent-signal)',
-        boxShadow: '0 24px 64px rgba(0, 217, 163, 0.25)',
+        boxShadow: '0 24px 64px rgba(59, 130, 246, 0.25)',
         display: 'flex',
         flexDirection: 'column',
         backdropFilter: 'blur(12px)'

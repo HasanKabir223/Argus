@@ -11,7 +11,7 @@ import {
   deleteReferencePerson, deleteAllReferencePersons, getPhotoUrl,
   type ReferencePerson
 } from '../services/api';
-import { DEFAULT_WATCHLIST_PERSONS } from '../data/mockData';
+// DEFAULT_WATCHLIST_PERSONS reserved for offline/fallback mode
 
 interface WatchlistGalleryModalProps {
   onClose: () => void;
@@ -562,7 +562,7 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              backgroundColor: showLogsHUD ? 'rgba(0, 217, 163, 0.2)' : 'var(--bg-void)',
+              backgroundColor: showLogsHUD ? 'rgba(59, 130, 246, 0.2)' : 'var(--bg-void)',
               color: showLogsHUD ? 'var(--accent-signal)' : 'var(--text-secondary)',
               border: `1px solid ${showLogsHUD ? 'var(--accent-signal)' : 'var(--border-hairline)'}`,
               padding: '6px 12px',
@@ -591,7 +591,7 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              backgroundColor: 'rgba(0, 217, 163, 0.12)',
+              backgroundColor: 'rgba(59, 130, 246, 0.12)',
               color: 'var(--accent-signal)',
               border: '1px solid var(--accent-signal)',
               padding: '6px 12px',
@@ -675,7 +675,7 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
       {/* Action Notification Banner */}
       {actionNotice && (
         <div style={{
-          backgroundColor: 'rgba(0, 217, 163, 0.15)',
+          backgroundColor: 'rgba(59, 130, 246, 0.15)',
           borderBottom: '1px solid var(--accent-signal)',
           color: 'var(--accent-signal)',
           padding: '6px 20px',
@@ -1088,8 +1088,8 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                     width: '64px',
                     height: '64px',
                     borderRadius: '50%',
-                    backgroundColor: 'rgba(0, 217, 163, 0.08)',
-                    border: '1px solid rgba(0, 217, 163, 0.25)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                    border: '1px solid rgba(59, 130, 246, 0.25)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -1189,8 +1189,8 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                           minHeight: '390px'
                         }}
                         onMouseEnter={e => {
-                          e.currentTarget.style.borderColor = 'rgba(0, 217, 163, 0.5)';
-                          e.currentTarget.style.boxShadow = '0 8px 28px rgba(0, 217, 163, 0.15)';
+                          e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)';
+                          e.currentTarget.style.boxShadow = '0 8px 28px rgba(59, 130, 246, 0.15)';
                         }}
                         onMouseLeave={e => {
                           e.currentTarget.style.borderColor = 'var(--border-hairline)';
@@ -1219,10 +1219,10 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                           <TargetImage personId={p.person_id} photoUrl={photoSrc} name={p.name} />
 
                           {/* Optical Reticle Lines */}
-                          <div style={{ position: 'absolute', top: '8px', left: '8px', width: '12px', height: '12px', borderTop: '2px solid rgba(0, 217, 163, 0.7)', borderLeft: '2px solid rgba(0, 217, 163, 0.7)', pointerEvents: 'none' }} />
-                          <div style={{ position: 'absolute', top: '8px', right: '8px', width: '12px', height: '12px', borderTop: '2px solid rgba(0, 217, 163, 0.7)', borderRight: '2px solid rgba(0, 217, 163, 0.7)', pointerEvents: 'none' }} />
-                          <div style={{ position: 'absolute', bottom: '8px', left: '8px', width: '12px', height: '12px', borderBottom: '2px solid rgba(0, 217, 163, 0.7)', borderLeft: '2px solid rgba(0, 217, 163, 0.7)', pointerEvents: 'none' }} />
-                          <div style={{ position: 'absolute', bottom: '8px', right: '8px', width: '12px', height: '12px', borderBottom: '2px solid rgba(0, 217, 163, 0.7)', borderRight: '2px solid rgba(0, 217, 163, 0.7)', pointerEvents: 'none' }} />
+                          <div style={{ position: 'absolute', top: '8px', left: '8px', width: '12px', height: '12px', borderTop: '2px solid rgba(59, 130, 246, 0.7)', borderLeft: '2px solid rgba(59, 130, 246, 0.7)', pointerEvents: 'none' }} />
+                          <div style={{ position: 'absolute', top: '8px', right: '8px', width: '12px', height: '12px', borderTop: '2px solid rgba(59, 130, 246, 0.7)', borderRight: '2px solid rgba(59, 130, 246, 0.7)', pointerEvents: 'none' }} />
+                          <div style={{ position: 'absolute', bottom: '8px', left: '8px', width: '12px', height: '12px', borderBottom: '2px solid rgba(59, 130, 246, 0.7)', borderLeft: '2px solid rgba(59, 130, 246, 0.7)', pointerEvents: 'none' }} />
+                          <div style={{ position: 'absolute', bottom: '8px', right: '8px', width: '12px', height: '12px', borderBottom: '2px solid rgba(59, 130, 246, 0.7)', borderRight: '2px solid rgba(59, 130, 246, 0.7)', pointerEvents: 'none' }} />
 
                           {/* Threat Level Badge */}
                           <div style={{
@@ -1267,7 +1267,7 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                             left: 0,
                             right: 0,
                             backgroundColor: 'rgba(10, 14, 20, 0.9)',
-                            borderTop: '1px solid rgba(0, 217, 163, 0.3)',
+                            borderTop: '1px solid rgba(59, 130, 246, 0.3)',
                             padding: '5px 10px',
                             display: 'flex',
                             alignItems: 'center',
@@ -1326,9 +1326,9 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                               fontSize: '0.65rem',
                               fontFamily: "'IBM Plex Mono', monospace",
                               color: 'var(--accent-signal)',
-                              backgroundColor: 'rgba(0, 217, 163, 0.08)',
+                              backgroundColor: 'rgba(59, 130, 246, 0.08)',
                               padding: '5px 8px',
-                              border: '1px solid rgba(0, 217, 163, 0.25)',
+                              border: '1px solid rgba(59, 130, 246, 0.25)',
                               marginBottom: '10px',
                               display: 'flex',
                               alignItems: 'center',
@@ -1355,7 +1355,7 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                                   alignItems: 'center',
                                   justifyContent: 'center',
                                   gap: '6px',
-                                  backgroundColor: 'rgba(0, 217, 163, 0.12)',
+                                  backgroundColor: 'rgba(59, 130, 246, 0.12)',
                                   border: '1px solid var(--accent-signal)',
                                   color: 'var(--accent-signal)',
                                   padding: '8px 10px',
@@ -1371,7 +1371,7 @@ export const WatchlistGalleryModal: React.FC<WatchlistGalleryModalProps> = ({ on
                                   e.currentTarget.style.color = '#0A0E14';
                                 }}
                                 onMouseLeave={e => {
-                                  e.currentTarget.style.backgroundColor = 'rgba(0, 217, 163, 0.12)';
+                                  e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.12)';
                                   e.currentTarget.style.color = 'var(--accent-signal)';
                                 }}
                               >
@@ -2095,8 +2095,8 @@ function TargetImage({
             width: large ? '64px' : '46px',
             height: large ? '64px' : '46px',
             borderRadius: '50%',
-            backgroundColor: 'rgba(0, 217, 163, 0.12)',
-            border: '1px solid rgba(0, 217, 163, 0.35)',
+            backgroundColor: 'rgba(59, 130, 246, 0.12)',
+            border: '1px solid rgba(59, 130, 246, 0.35)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

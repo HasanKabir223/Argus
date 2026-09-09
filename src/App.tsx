@@ -34,11 +34,7 @@ function App() {
   const [showWatchlist, setShowWatchlist] = useState(false);
   const [replayTime, setReplayTime] = useState<number | null>(null);
 
-  // Boot sequence
-  useEffect(() => {
-    const timer = setTimeout(() => setIsBooting(false), 800);
-    return () => clearTimeout(timer);
-  }, []);
+
 
   const addToast = useCallback((message: string, type: ToastItem['type']) => {
     const id = `t-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -249,6 +245,10 @@ function App() {
 
   return (
     <>
+      {isBooting && (
+        <LoadingScreen onComplete={() => setIsBooting(false)} minDuration={2200} />
+      )}
+
       <TopBar
         isLive={isLive}
         onToggleLive={() => setIsLive(prev => !prev)}

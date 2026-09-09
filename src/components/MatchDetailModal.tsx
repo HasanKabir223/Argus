@@ -415,7 +415,7 @@ export const MatchDetailModal: React.FC<MatchDetailModalProps> = ({
             <div style={{
               width: '100%',
               padding: '10px',
-              backgroundColor: 'rgba(0, 217, 163, 0.1)',
+              backgroundColor: 'rgba(59, 130, 246, 0.1)',
               border: '1px solid var(--accent-signal)',
               color: 'var(--accent-signal)',
               textAlign: 'center',
