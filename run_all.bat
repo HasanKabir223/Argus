@@ -1,10 +1,10 @@
 @echo off
 setlocal enabledelayedexpansion
-title SENTINEL Mini-Gotham Launcher
-color 0A
+title ARGUS Operations Launcher
+color 09
 
 echo ======================================================================
-echo           SENTINEL - CHECKPOINT AI FACE MATCHING SYSTEM
+echo           ARGUS - HUMANITARIAN INTELLIGENCE INFRASTRUCTURE
 echo                 Starting AI Backend & Operations Console...
 echo ======================================================================
 echo.
@@ -57,11 +57,11 @@ timeout /t 1 /nobreak >nul
 
 :: 3. Launch FastAPI AI Backend (single worker to keep in-memory job state consistent)
 echo [1/3] Launching FastAPI AI Backend on http://localhost:8000...
-start "SENTINEL AI Backend Server (Port 8000)" cmd /k "cd /d %~dp0 && !PY_CMD! -m uvicorn backend.main:app --host 0.0.0.0 --port 8000"
+start "ARGUS AI Backend Server (Port 8000)" cmd /k "cd /d %~dp0 && !PY_CMD! -m uvicorn backend.main:app --host 0.0.0.0 --port 8000"
 
 :: 4. Launch React Vite Frontend
 echo [2/3] Launching React Operations Console on http://localhost:5173 ...
-start "SENTINEL Frontend Console (Port 5173)" cmd /k "cd /d %~dp0 && npm run dev"
+start "ARGUS Operations Console (Port 5173)" cmd /k "cd /d %~dp0 && npm run dev"
 
 :: 5. Wait for Backend to become healthy
 echo Waiting for backend server initialization...

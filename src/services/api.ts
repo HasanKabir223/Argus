@@ -1,5 +1,5 @@
 /**
- * Mini Gotham API Client
+ * ARGUS API Client
  * Connects the React dashboard to the FastAPI AI Services & CCTV Ingestion Layer.
  */
 

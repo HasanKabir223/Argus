@@ -15,7 +15,7 @@ export class ErrorBoundary extends React.Component<React.PropsWithChildren, Erro
   }
 
   componentDidCatch(error: unknown) {
-    console.error('Mini Gotham crashed:', error);
+    console.error('ARGUS crashed:', error);
   }
 
   render() {
