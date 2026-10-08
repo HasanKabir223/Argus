@@ -383,17 +383,8 @@ export const AbstractArt: React.FC = () => {
     // 3. Subtle rotating radar sweep line
     ctx.save();
     const sweepLen = baseRadius * 1.35;
-    const gradient = ctx.createLinearGradient(
-      cx,
-      cy,
-      cx + Math.cos(scanAngle) * sweepLen,
-      cy + Math.sin(scanAngle) * sweepLen
-    );
-    gradient.addColorStop(0, 'rgba(59, 130, 246, 0.35)');
-    gradient.addColorStop(0.8, 'rgba(96, 165, 250, 0.15)');
-    gradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
 
-    ctx.strokeStyle = gradient;
+    ctx.strokeStyle = 'rgba(59, 130, 246, 0.25)';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(cx, cy);

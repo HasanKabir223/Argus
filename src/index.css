@@ -1,20 +1,20 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 :root {
-  --bg-void: #0A0E14;
-  --bg-panel: #12161F;
-  --bg-panel-raised: #1A2029;
-  --border-hairline: #1E2533;
-  --text-primary: #E8ECF1;
-  --text-secondary: #566170;
-  --text-dim: #2E3744;
+  --bg-void: #08090D;
+  --bg-panel: #0F1117;
+  --bg-panel-raised: #161A24;
+  --border-hairline: #1A1E28;
+  --text-primary: #D4DCE8;
+  --text-secondary: #4A5568;
+  --text-dim: #252B36;
   --accent: #3B82F6;
   --accent-signal: #3B82F6;
-  --accent-dim: rgba(59, 130, 246, 0.08);
-  --accent-glow: rgba(59, 130, 246, 0.25);
+  --accent-dim: rgba(59, 130, 246, 0.06);
+  --accent-glow: rgba(59, 130, 246, 0.15);
   --accent-alert: #FF4757;
   --accent-amber: #FFB830;
-  --accent-muted: #1E2533;
+  --accent-muted: #1A1E28;
   --panel-w: 360px;
 }
 

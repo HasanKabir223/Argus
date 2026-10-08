@@ -1,190 +1,249 @@
-# Project: Checkpoint-Based Missing Person Matching System
-### "Mini Gotham" — Operational Dashboard for Missing Person Identification
+# ARGUS
+### Humanitarian Intelligence Infrastructure — Checkpoint-Based Missing Person Identification
+
+> **Research prototype.** Human-reviewed. Checkpoint-based. Not mass surveillance.
 
 ---
 
-## 1. Problem Statement
+## What is ARGUS?
 
-Reuniting missing persons (especially children) with families is a real, urgent social problem. Manual review of found-person reports against missing-person databases is slow and doesn't scale. This project builds a **checkpoint-based face-matching system** with a live operational dashboard — inspired by real deployed systems (e.g. Delhi Police's 2018 facial recognition pilot for missing children) and data-fusion platforms like Palantir Gotham (used by Team Rubicon for disaster response, fusing multiple data sources into one "common operating picture").
+ARGUS is a real-time operational dashboard for identifying missing persons at fixed checkpoints (railway stations, bus terminals, police posts). It fuses face detection, 512-dimensional ArcFace embeddings, FAISS vector search, and ByteTrack multi-target tracking into a single intelligence console — built for human analysts, not automated action.
 
-**What this is NOT:** a claim of continuous, city-wide, real-time surveillance. This is a **checkpoint-based** system — matching happens at fixed, known locations (e.g. railway stations, bus stands, police posts), the same way real-world deployments work. Every match is logged with location, timestamp, and confidence — and flagged for **human review**, not automatic action.
-
----
-
-## 2. Core Idea
-
-1. A small reference database of missing-person photos is converted into face embeddings and stored in a searchable vector index.
-2. Fixed "checkpoints" (simulated cameras at known locations) process incoming photos/video frames.
-3. Detected faces are matched against the reference database.
-4. High-confidence matches are logged (person, checkpoint, location, timestamp, confidence) and shown on a live map dashboard for human review.
+Every match is logged with location, timestamp, and confidence score. No action is taken without operator confirmation.
 
 ---
 
-## 3. Ethical Framing (say this explicitly in the pitch)
-
-- **Checkpoint-based, not continuous tracking.** Matching happens at fixed points, not everywhere at once.
-- **Human-in-the-loop.** The system suggests candidate matches; a person confirms. No automatic action is taken on a match.
-- **Confidence-aware.** Low-confidence matches are flagged for review, not silently trusted or discarded.
-- **Demo uses synthetic/public face data only** (LFW/CelebA) — never real missing children's photos.
-- **Honest scoping.** Clearly state what's real (checkpoint matching, dashboard, pipeline) vs. simulated (live citywide CCTV integration, real police data feeds) — this is future-work, not implemented.
-
----
-
-## 4. Tech Stack by Layer
-
-### Layer 1 — Detection & Tracking (per video frame / per checkpoint)
-| Component | Tool | Purpose |
-|---|---|---|
-| Face/person detection | YOLO (or a lightweight face detector like RetinaFace) | Find faces in each frame |
-| Multi-object tracking | ByteTrack / DeepSORT | Assign a temporary track ID per person so we don't re-process the same person every frame |
-
-### Layer 2 — Embedding Generation
-| Component | Tool | Purpose |
-|---|---|---|
-| Face embedding model | ArcFace (via `insightface` library), pretrained | Convert a face crop into a 512-dim vector |
-| Optimization | Pruned/distilled lightweight variant (e.g. MobileFaceNet-style) | Trade a small amount of accuracy for real-time throughput at high face-count scenes |
-| Batching | Batch inference instead of per-face loop | Large speedup on GPU vs. sequential calls |
-
-### Layer 3 — Similarity Search
-| Component | Tool | Purpose |
-|---|---|---|
-| Vector index | FAISS (`IndexFlatIP` for cosine similarity, or `IndexFlatL2`) | Store and search reference embeddings |
-| Similarity metric | Cosine similarity | Score range -1 to 1; threshold ~0.75 = match |
-| Scale note | At ~100 reference vectors, flat (brute-force) search is already instant — no need for HNSW/IVF indexing at this scale. Mention in pitch: "search isn't the bottleneck, embedding generation is." |
-
-### Layer 4 — Backend / Event Store
-| Component | Tool | Purpose |
-|---|---|---|
-| API server | FastAPI | Endpoints: `/submit_photo`, `/events`, `/checkpoints` |
-| Event log | SQLite or JSON file (demo scale) | Stores {person_id, checkpoint_name, lat, long, timestamp, confidence_score} |
-| Pipeline pattern | Async producer-consumer queue | Detection keeps running while recognition processes queued face crops — avoids blocking on busy frames |
-
-### Layer 5 — Dashboard (the "Palantir-style" UI)
-| Component | Tool | Purpose |
-|---|---|---|
-| Map | Leaflet.js (free, no API key) or Mapbox GL (nicer, free tier) | Dark-themed map, pins at checkpoint locations |
-| Frontend framework | React | Dashboard shell |
-| Map pins | Color-coded (grey = idle, red/highlight = active match) | At-a-glance status |
-| Side panel | Ranked match list — thumbnail, person ID, checkpoint, confidence %, timestamp | Human review surface |
-| Timeline | Horizontal scrubber showing matches over time as dots | "Sightings trail" visual without claiming continuous tracking |
-| Detail view | Click a pin/list item → matched photo + reference photo side-by-side + confidence + "flagged for review" status | Human-in-the-loop confirmation step |
-
----
-
-## 5. Data Flow (End to End)
+## Architecture
 
 ```
-[Checkpoint Photo/Frame]
-        ↓
-Face Detection + Tracking (per frame, cheap)
-        ↓
-New track ID? ──No──> reuse stored result, skip everything below
-        │
-       Yes
-        ↓
-Filter: skip if face too small/blurry/low-confidence detection
-        ↓
-Batch → Embedding Model (pruned, once per new track)
-        ↓
-FAISS Search vs. Reference DB (instant at this scale)
-        ↓
-Cosine similarity score
-        ↓
-   Score ≥ 0.75 ──Yes──> Log match event
-        │                {person_id, checkpoint, lat, long,
-        No                timestamp, confidence}
-        ↓                        ↓
-   Discard              Push to backend event store
-                                  ↓
-                        Dashboard polls /events
-                                  ↓
-                   Map pin lights up + side panel updates
-                          + timeline dot added
+┌─────────────────────────────────────────────────────────────────┐
+│                        CCTV / Video Feed                        │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                    ┌────────▼────────┐
+                    │  Face Detector  │  YuNet (ONNX)
+                    │   + ByteTrack   │  track ID deduplication
+                    └────────┬────────┘
+                             │  new track only
+                    ┌────────▼────────┐
+                    │  Quality Filter │  size / blur / confidence
+                    └────────┬────────┘
+                             │  pass
+                    ┌────────▼────────┐
+                    │  ArcFace Embed  │  512-d L2-normalised vector
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │  FAISS Search   │  cosine similarity vs. watchlist
+                    └────────┬────────┘
+                             │  score ≥ threshold
+               ┌─────────────▼─────────────┐
+               │   FastAPI Event Store      │  SQLite · SSE
+               │   (backend/main.py)        │
+               └─────────────┬─────────────┘
+                             │  poll every 2.5 s
+               ┌─────────────▼─────────────┐
+               │   React Operations Console │  Leaflet · Globe.gl
+               │   (src/)                  │  match list · timeline
+               └───────────────────────────┘
+```
+
+**Key design decisions:**
+- Track-based deduplication — each person gets one embedding call per track, not one per frame.
+- Flat FAISS index — at watchlist scale (~100–500 persons) brute-force search is sub-millisecond. No HNSW/IVF needed.
+- Human-in-the-loop — PENDING → CONFIRMED / DISMISSED / FLAGGED, always by an operator.
+
+---
+
+## Project Layout
+
+```
+mini-palantir/
+│
+├── backend/                    # FastAPI AI Services Layer
+│   ├── main.py                 # App entry point, lifespan, static mounts
+│   ├── api/
+│   │   └── routes.py           # All REST + SSE endpoints
+│   ├── services/
+│   │   ├── pipeline.py         # Orchestration: detect → embed → search
+│   │   ├── cctv_service.py     # CCTV stream ingestion & job management
+│   │   ├── face_detector.py    # YuNet ONNX wrapper
+│   │   ├── face_embedder.py    # ArcFace embedding via InsightFace
+│   │   ├── faiss_search.py     # FAISS index: build, search, persist
+│   │   ├── tracker.py          # ByteTrack multi-target tracker
+│   │   ├── track_cache.py      # Per-track embedding deduplication
+│   │   ├── quality_filter.py   # Face crop quality gating
+│   │   ├── event_service.py    # Match event CRUD + SSE broadcast
+│   │   ├── gallery_manager.py  # Watchlist photo storage & thumbnails
+│   │   ├── ingest_job_service.py # Background ingestion job queue
+│   │   └── face_hasher.py      # Perceptual hash for duplicate detection
+│   ├── models/
+│   │   └── yunet.onnx          # Bundled face detector weights
+│   ├── db/
+│   │   └── database.py         # SQLAlchemy setup, init_db()
+│   ├── data/                   # Runtime: watchlist photos, CCTV clips
+│   ├── static/                 # Served crops, gallery images
+│   ├── scripts/
+│   │   └── seed_data.py        # Initial checkpoint + gallery seeding
+│   └── tests/
+│
+├── argus/                      # Standalone CV pipeline (CLI / batch)
+│   ├── main.py
+│   ├── pipeline/
+│   │   ├── detector.py
+│   │   ├── embedder.py
+│   │   ├── searcher.py
+│   │   └── pipeline.py
+│   ├── models/
+│   └── watchlist/
+│
+├── src/                        # React + TypeScript Operations Console
+│   ├── main.tsx
+│   ├── index.css               # Global design tokens (Obsidian Terminal theme)
+│   ├── App.tsx                 # Root: state, event polling, modal orchestration
+│   ├── pages/
+│   │   ├── LandingPage.tsx     # Entry / marketing page
+│   │   └── LandingPage.css
+│   ├── components/
+│   │   ├── TopBar.tsx          # Command bar: live toggle + action buttons
+│   │   ├── MapView.tsx         # Leaflet 2D tactical map + checkpoint pins
+│   │   ├── GlobeView.tsx       # Globe.gl 3D globe view
+│   │   ├── MatchListPanel.tsx  # Right-side sightings queue
+│   │   ├── MatchDetailModal.tsx # Side-by-side face comparison + review
+│   │   ├── TimelineStrip.tsx   # Bottom scrubber: sightings over time
+│   │   ├── CctvStudioModal.tsx # Live CCTV feed analysis studio
+│   │   ├── CctvIngestion.tsx   # Video file ingestion + progress tracking
+│   │   ├── WatchlistGalleryModal.tsx # Watchlist CRUD + photo management
+│   │   ├── CheckpointStatusPanel.tsx # Per-checkpoint health overview
+│   │   ├── AuditLogPanel.tsx   # Operator action history
+│   │   ├── LoadingScreen.tsx   # Cinematic boot sequence
+│   │   ├── ArchitectureVisuals.tsx   # Landing page face-scan animation
+│   │   ├── AbstractArt.tsx     # Canvas radar sweep
+│   │   ├── HeroGlobe.tsx       # Landing page globe
+│   │   ├── AeroShards.jsx      # Particle field (hero background)
+│   │   ├── FaceThumb.tsx       # Lazy-loaded face crop thumbnail
+│   │   ├── Toast.tsx           # Notification toasts
+│   │   ├── ShortcutsOverlay.tsx
+│   │   └── ErrorBoundary.tsx
+│   ├── services/
+│   │   └── api.ts              # All fetch calls to FastAPI backend
+│   ├── hooks/
+│   │   ├── useMagnetic.ts
+│   │   ├── useReveal.ts
+│   │   └── useSpotlight.ts
+│   ├── data/
+│   │   └── mockData.ts         # Seed checkpoints + fallback match data
+│   └── utils/
+│       └── confidence.ts       # Confidence tier labelling helpers
+│
+├── docs/                       # Design documents & planning artefacts
+│   ├── MASTER_PRD.md
+│   ├── CheckList.md
+│   ├── Master Plan for Pipeline.md
+│   ├── PRD_AI_services.md
+│   └── UI_design.md
+│
+├── index.html                  # Vite HTML shell
+├── vite.config.ts
+├── tsconfig.json
+├── package.json
+├── run_all.bat                 # One-click launcher (backend + frontend + Brave)
+├── start_backend.bat
+├── start_frontend.bat
+└── AGENTS.md                   # AI agent personas & workspace rules
 ```
 
 ---
 
-## 6. Latency Optimizations (Why This Scales)
+## Tech Stack
 
-Key insight: **the vector database search is NOT the bottleneck at this scale.** Searching 100 reference vectors is sub-millisecond regardless of query volume. The real cost is generating embeddings for every detected face. Optimizations:
-
-1. **Track-based deduplication** — assign each person a temporary tracking ID; only run the expensive embedding model once per new track, not once per frame. A person on screen for 150 frames needs 1 face-check, not 150.
-2. **Batch inference** — process all face crops in a frame as one batch through the model instead of a per-face loop. Large speedup on GPU.
-3. **Pre-filtering** — discard low-quality/too-small/too-blurry detections before running embedding generation at all.
-4. **Pruned/lightweight embedding model** — smaller model trades a small accuracy loss for much higher throughput, necessary when handling high face-counts per frame in real time.
-5. **Async pipeline (producer-consumer)** — detection and recognition run as decoupled stages with a queue between them, so a busy frame doesn't freeze the whole system.
-
-**One-line summary for Q&A:** *"At this scale, the database search isn't the bottleneck — it's embedding generation. We solve it with track-based deduplication (embed each person once, not per frame), batched inference, and a pruned lightweight model — a tradeoff we can quantify with real numbers."*
-
----
-
-## 7. Datasets
-
-| Purpose | Dataset | Notes |
-|---|---|---|
-| Reference "missing persons" DB | LFW or CelebA (public face datasets) | Use as synthetic stand-ins only, never real missing persons |
-| Checkpoint photo streams | Same source, split into folders per simulated checkpoint | Some should intentionally match reference DB to trigger demo matches |
-| (Optional) Detection/tracking benchmark | Any public pedestrian/face detection dataset for testing detector accuracy | Not required for MVP |
-
----
-
-## 8. MVP Scope vs. Stretch Goals
-
-**Must-have (core demo):**
-- Working face detection → embedding → FAISS matching pipeline
-- 4-5 simulated checkpoints with real coordinates
-- Dashboard: map + pins + side panel + basic match display
-- At least one live, working demo path (photo submitted → match appears on dashboard)
-
-**Stretch goals (if time allows):**
-- Timeline scrubber for "sightings over time"
-- Tracking-based deduplication (vs. naive per-frame matching)
-- Pruned model with a measured latency/accuracy comparison vs. full model
-- Live webcam input during the demo instead of pre-loaded photos
-
-**Explicitly out of scope (say this to judges):**
-- Real live CCTV integration
-- Real missing-persons data
-- City-wide continuous tracking
-
----
-
-## 9. Demo Script (for judges)
-
-1. Show empty dashboard — "here are our checkpoints, live map"
-2. Submit a test photo (webcam or pre-loaded) at Checkpoint A
-3. Pin lights up, side panel shows match + confidence score
-4. Repeat at 1-2 more checkpoints to build a "sightings trail" on the timeline
-5. Click into a match → show side-by-side comparison + "flagged for human review" status
-6. Close with the scoping statement: *"Checkpoint matching and the dashboard are fully working. A real deployment would plug into actual cameras at these same physical locations — the architecture doesn't change, only the input source."*
-
----
-
-## 10. Anticipated Judge Questions (prep answers)
-
-| Question | Answer |
+| Layer | Technology |
 |---|---|
-| "Isn't this mass surveillance?" | No — checkpoint-based matching at fixed known locations, not continuous tracking. Human review required before any action. |
-| "How does this scale to a real city with millions of records?" | FAISS with HNSW/IVF indexing handles million-scale search in milliseconds; at our demo scale (100 records), even brute-force search is instant. |
-| "What about 1000 people in frame at once — won't it be slow?" | Bottleneck isn't the DB search, it's embedding generation. We deduplicate via tracking (embed once per person, not per frame), batch inference, and use a pruned model — all measurable tradeoffs. |
-| "What if the photo quality is bad (blurry, aged photo)?" | Confidence threshold + human review step; low-confidence matches are flagged for review, not silently trusted. Real gap in commercial systems we're deliberately addressing. |
-| "Is this trained on real people's data?" | No — public face datasets (LFW/CelebA) used as synthetic stand-ins for the demo only. |
+| **Face Detection** | YuNet (ONNX, bundled) |
+| **Face Embedding** | ArcFace via InsightFace — 512-d vectors |
+| **Multi-target Tracking** | ByteTrack |
+| **Vector Search** | FAISS (`IndexFlatIP`, cosine similarity) |
+| **Backend** | Python 3.10 · FastAPI · SQLite · Uvicorn |
+| **Frontend** | React 19 · TypeScript · Vite |
+| **Map** | React-Leaflet (2D) · Globe.gl / cobe (3D) |
+| **Icons** | Lucide React |
+| **Typography** | Inter · Space Grotesk · IBM Plex Mono |
+| **Linting** | Oxlint (frontend) |
 
 ---
 
-## 11. Team Task Split (suggested)
+## Prerequisites
 
-- **ML/Backend**: detection + tracking + embedding pipeline + FAISS integration
-- **Backend/API**: FastAPI event store, endpoints, data schema
-- **Frontend**: React dashboard, Leaflet map, side panel, timeline
-- **Optimization/Research**: pruning experiment (model size vs. latency vs. accuracy), writeup for Q&A defense
-- **Pitch/Design**: demo script, slides, ethical framing talking points
+| Requirement | Version |
+|---|---|
+| Python | 3.10 |
+| Node.js | 18+ |
+| npm | 9+ |
+
+**Python packages** (install once):
+```bash
+pip install fastapi uvicorn[standard] sqlalchemy insightface onnxruntime faiss-cpu numpy opencv-python pillow
+```
+
+**Node packages** (install once from project root):
+```bash
+npm install
+```
 
 ---
 
-## 12. Novelty Summary (for pitch deck)
+## Running
 
-1. **Checkpoint-based architecture, not surveillance-claiming** — realistic, defensible framing matching how real systems actually work.
-2. **Confidence-aware human-in-the-loop matching** — flags uncertainty instead of forcing a decision, addressing a real gap in commercial face-matching tools (aged photos, poor quality images).
-3. **Latency-aware system design** — track-based deduplication + batching + pruned models, a genuine systems-engineering contribution beyond "call a face recognition API."
-4. **Operational dashboard, not just a model** — fuses detection + matching + geolocation + timeline into one decision-support tool, closer to how real operational systems (Palantir Gotham-style "common operating picture") are actually built.
+### One-click (Windows)
+```
+run_all.bat
+```
+Clears stale processes on ports 8000/5173, starts the backend, starts Vite, waits for backend health, then opens Brave at the landing page.
+
+### Manual
+
+**Terminal 1 — Backend:**
+```bash
+cd mini-palantir
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+```
+
+**Terminal 2 — Frontend:**
+```bash
+cd mini-palantir
+npm run dev
+```
+
+| URL | Description |
+|---|---|
+| `http://localhost:5173/` | Landing page |
+| `http://localhost:5173/app` | Operations console |
+| `http://localhost:8000/docs` | FastAPI Swagger UI |
+
+---
+
+## Keyboard Shortcuts (Operations Console)
+
+| Key | Action |
+|---|---|
+| `P` | Toggle live polling on / off |
+| `V` | Switch map ↔ globe view |
+| `C` | Open CCTV Studio |
+| `W` | Open Watchlist Gallery |
+| `?` | Show all shortcuts |
+
+---
+
+## Ethical Framing
+
+- **Checkpoint-based, not continuous.** Matching only occurs at fixed, declared locations — not city-wide.
+- **Human-in-the-loop.** Every candidate match requires operator confirmation before any action.
+- **Confidence-aware.** Low-confidence detections are surfaced for review, never silently acted upon.
+- **Synthetic data only.** This prototype uses public face datasets (LFW / CelebA) as stand-ins. No real missing persons data is ever stored or processed.
+- **Honest scope.** Live CCTV integration and real police data feeds are future work, not implemented.
+
+---
+
+## License
+
+Research prototype — not for production or law enforcement deployment.

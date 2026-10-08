@@ -21,15 +21,6 @@ export function LandingPage() {
 
   return (
     <div className="argus-landing">
-      {/* ─── Navigation ─────────────────────────────────────── */}
-      <header className="argus-landing-nav">
-        <span className="nav-wordmark">ARGUS</span>
-        <div className="nav-live-indicator">
-          <span className="live-dot" aria-hidden="true" />
-          <span className="live-label">SYSTEM ACTIVE</span>
-        </div>
-      </header>
-
       {/* ─── Section 1: Hero ────────────────────────────────── */}
       <section className="hero-section">
         <div className="hero-aero-shards">

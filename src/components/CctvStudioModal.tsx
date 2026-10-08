@@ -639,9 +639,9 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                   top: 0,
                   left: 0,
                   right: 0,
-                  height: '2px',
-                  background: 'linear-gradient(90deg, transparent, #3B82F6, #60A5FA, transparent)',
-                  boxShadow: '0 0 15px #3B82F6, 0 0 30px #60A5FA',
+                  height: '1px',
+                  background: '#3B82F6',
+                  opacity: 0.6,
                   animation: 'scanLaser 1.8s ease-in-out infinite',
                   pointerEvents: 'none'
                 }} />
@@ -830,8 +830,8 @@ export const CctvStudioModal: React.FC<CctvStudioModalProps> = ({ onClose, onPin
                       width: '100%',
                       height: '100%',
                       background: pipelinePhase === 'phase1_detecting'
-                        ? 'linear-gradient(90deg, #3B82F6, #60A5FA)'
-                        : 'linear-gradient(90deg, #38BDF8, #F59E0B)',
+                        ? '#3B82F6'
+                        : '#FFB830',
                       animation: 'progressIndeterminate 1.2s infinite'
                     }} />
                   </div>

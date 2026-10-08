@@ -58,9 +58,9 @@ export const DetectionVisual: React.FC = () => {
             left: '30px',
             top: `${scanY}%`,
             width: '100px',
-            height: '2px',
-            background: 'linear-gradient(90deg, transparent, #38BDF8, #67E8F9, #38BDF8, transparent)',
-            boxShadow: '0 0 12px #38BDF8, 0 0 24px rgba(56, 189, 248, 0.8)',
+            height: '1px',
+            background: '#3B82F6',
+            opacity: 0.5,
             pointerEvents: 'none',
             transform: 'translateY(-50%)',
           }}

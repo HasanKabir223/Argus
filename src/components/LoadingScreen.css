@@ -23,7 +23,7 @@
   pointer-events: none;
 }
 
-/* Background Ambient Glow & Grid Matrix */
+/* Background Ambient Marker */
 .boot-ambient-glow {
   position: absolute;
   top: 50%;
@@ -31,14 +31,9 @@
   transform: translate(-50%, -50%);
   width: 650px;
   height: 650px;
-  background: radial-gradient(
-    circle,
-    rgba(59, 130, 246, 0.14) 0%,
-    rgba(30, 58, 110, 0.06) 40%,
-    transparent 70%
-  );
+  background: rgba(59, 130, 246, 0.04);
+  border-radius: 50%;
   pointer-events: none;
-  filter: blur(40px);
 }
 
 .boot-grid-matrix {
@@ -81,7 +76,6 @@
   height: 6px;
   border-radius: 50%;
   background-color: var(--accent, #3B82F6);
-  box-shadow: 0 0 10px var(--accent, #3B82F6);
   animation: boot-dot-pulse 1.6s infinite ease-in-out;
 }
 
@@ -169,10 +163,10 @@
   top: 50%;
   left: 50%;
   width: 70px;
-  height: 2px;
+  height: 1px;
   transform-origin: 0 0;
-  background: linear-gradient(90deg, var(--accent, #3B82F6), transparent);
-  box-shadow: 0 0 8px rgba(59, 130, 246, 0.8);
+  background: var(--accent, #3B82F6);
+  opacity: 0.6;
   animation: boot-radar-sweep 3s linear infinite;
 }
 
@@ -197,9 +191,8 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: rgba(18, 22, 31, 0.9);
+  background: #0F1117;
   border: 1px solid var(--accent, #3B82F6);
-  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -210,8 +203,7 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: radial-gradient(circle, #93C5FD 0%, #3B82F6 100%);
-  box-shadow: 0 0 12px #3B82F6;
+  background: var(--accent, #3B82F6);
   position: relative;
 }
 
@@ -232,9 +224,8 @@
   font-size: 38px;
   font-weight: 800;
   letter-spacing: 0.28em;
-  color: var(--text-primary, #E8ECF1);
+  color: var(--text-primary, #D4DCE8);
   margin: 0 0 8px 0;
-  text-shadow: 0 0 30px rgba(59, 130, 246, 0.45);
 }
 
 .boot-subtitle {
@@ -266,10 +257,9 @@
 
 .boot-progress-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #1E3A8A 0%, #3B82F6 50%, #60A5FA 100%);
+  background: var(--accent, #3B82F6);
   border-radius: 2px;
   transition: width 0.08s linear;
-  box-shadow: 0 0 14px rgba(59, 130, 246, 0.6);
 }
 
 .boot-progress-glow-head {
@@ -279,7 +269,6 @@
   height: 6px;
   border-radius: 50%;
   background: #FFFFFF;
-  box-shadow: 0 0 10px #60A5FA, 0 0 20px #3B82F6;
   transform: translate(-50%, -50%);
   pointer-events: none;
   transition: left 0.08s linear;
